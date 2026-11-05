@@ -1,4 +1,4 @@
-local Version = "v1.0"
+local Version = "beta"
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -265,20 +265,68 @@ local function RemoveFriend(key)
 	end
 end
 
+-- Szuka czesci po nazwie najpierw jako bezposredniego dziecka (typowy rig), a jesli jej tam
+-- nie ma, przeszukuje caly model w glab. Niektore gry chowaja Head / HumanoidRootPart w dodatkowym
+-- folderze/podmodelu (np. Character -> Rig -> Head), a sama nazwa "FindFirstChild" bez rekurencji
+-- tego nie znajduje - stad gracz "nie jest wykrywany" mimo ze fizycznie tam jest.
+local function FindPart(model, name)
+	local p = model:FindFirstChild(name)
+	if p and p:IsA("BasePart") then
+		return p
+	end
+	p = model:FindFirstChild(name, true)
+	if p and p:IsA("BasePart") then
+		return p
+	end
+	return nil
+end
+
+-- Mapa Humanoid -> Model, niezalezna od tego gdzie fizycznie siedzi Humanoid w hierarchii;
+-- uzywana do bezpiecznego wyrejestrowania bez zgadywania po .Parent.
+local HumanoidOwnerModel = setmetatable({}, { __mode = "k" })
+
+-- Ustala, do kogo nalezy dany Humanoid: jesli jest potomkiem ktoregokolwiek z aktualnych
+-- Player.Character, uzywamy TEGO modelu jako klucza rejestru (gwarantowany prawidlowy gracz,
+-- nawet gdy Humanoid jest zagniezdzony glebiej niz bezposrednio pod postacia gracza). W innym
+-- wypadku traktujemy to jako NPC i bierzemy najblizszy Model-rodzic (stare zachowanie).
+local function FindOwningCharacter(desc)
+	for _, pl in ipairs(Players:GetPlayers()) do
+		local char = pl.Character
+		if char and desc:IsDescendantOf(char) then
+			return pl, char
+		end
+	end
+	return nil, nil
+end
+
 local function RegisterHumanoid(desc)
 	if not desc:IsA("Humanoid") then
 		return
 	end
-	local model = desc.Parent
-	if not (model and model:IsA("Model")) or Registry[model] then
+	local owner, ownerChar = FindOwningCharacter(desc)
+	local model = ownerChar or desc.Parent
+	if not (model and model:IsA("Model")) then
 		return
 	end
+
+	local existing = Registry[model]
+	if existing then
+		-- ten sam model (np. respawn z ponownie uzytym rigiem) - tylko doczep nowy Humanoid/gracza
+		existing.Humanoid = desc
+		if owner then
+			existing.Player = owner
+		end
+		existing.Root, existing.Head, existing.Torso = nil, nil, nil
+		HumanoidOwnerModel[desc] = model
+		return
+	end
+
 	local e = {
 		Model = model,
 		Humanoid = desc,
 		Root = nil,
 		Head = nil,
-		Player = Players:GetPlayerFromCharacter(model),
+		Player = owner or Players:GetPlayerFromCharacter(model),
 		PlayerCheck = 0,
 		IsDummy = IsDummyName(model.Name),
 		Checked = 0,
@@ -288,16 +336,22 @@ local function RegisterHumanoid(desc)
 		e.IsDummy = IsDummyName(model.Name)
 	end)
 	Registry[model] = e
+	HumanoidOwnerModel[desc] = model
 end
 
 local function UnregisterHumanoid(desc)
-	if desc:IsA("Humanoid") then
-		local model = desc.Parent
-		local e = model and Registry[model]
-		if e and e.Humanoid == desc then
-			e.NameConn:Disconnect()
-			Registry[model] = nil
-		end
+	if not desc:IsA("Humanoid") then
+		return
+	end
+	local model = HumanoidOwnerModel[desc]
+	HumanoidOwnerModel[desc] = nil
+	if not model then
+		return
+	end
+	local e = Registry[model]
+	if e and e.Humanoid == desc then
+		e.NameConn:Disconnect()
+		Registry[model] = nil
 	end
 end
 
@@ -307,12 +361,42 @@ end
 Workspace.DescendantAdded:Connect(RegisterHumanoid)
 Workspace.DescendantRemoving:Connect(UnregisterHumanoid)
 
+-- Siatka bezpieczenstwa: niezaleznie od skanowania Workspace, kazdy Humanoid pod postacia
+-- gracza (istniejacego lub nowego/odradzajacego sie) zostaje zarejestrowany wprost ze zdarzen
+-- Players, zamiast polegac wylacznie na kolejnosci DescendantAdded. To naprawia gry, w ktorych
+-- postac buduje sie stopniowo albo Humanoid pojawia sie zanim gra w pelni ustawi Player.Character.
+local function ScanCharacter(char)
+	if not (char and char.Parent) then
+		return
+	end
+	local hum = char:FindFirstChildOfClass("Humanoid") or char:FindFirstChildWhichIsA("Humanoid", true)
+	if hum then
+		RegisterHumanoid(hum)
+	end
+end
+
+local function HookPlayer(pl)
+	pl.CharacterAdded:Connect(function(char)
+		task.defer(ScanCharacter, char)
+		task.delay(0.5, ScanCharacter, char)
+		task.delay(2, ScanCharacter, char)
+	end)
+	if pl.Character then
+		task.defer(ScanCharacter, pl.Character)
+	end
+end
+
+for _, pl in ipairs(Players:GetPlayers()) do
+	HookPlayer(pl)
+end
+Players.PlayerAdded:Connect(HookPlayer)
+
 local function GetRoot(e)
 	local r = e.Root
 	if r and r.Parent then
 		return r
 	end
-	r = e.Model:FindFirstChild("HumanoidRootPart") or e.Model.PrimaryPart
+	r = FindPart(e.Model, "HumanoidRootPart") or e.Model.PrimaryPart
 	if r and not r:IsA("BasePart") then
 		r = nil
 	end
@@ -325,10 +409,7 @@ local function GetHead(e)
 	if h and h.Parent then
 		return h
 	end
-	h = e.Model:FindFirstChild("Head")
-	if h and not h:IsA("BasePart") then
-		h = nil
-	end
+	h = FindPart(e.Model, "Head")
 	e.Head = h
 	return h
 end
@@ -339,10 +420,7 @@ local function GetTorso(e)
 		return t
 	end
 	local m = e.Model
-	t = m:FindFirstChild("UpperTorso") or m:FindFirstChild("Torso")
-	if t and not t:IsA("BasePart") then
-		t = nil
-	end
+	t = FindPart(m, "UpperTorso") or FindPart(m, "Torso")
 	e.Torso = t
 	return t
 end
