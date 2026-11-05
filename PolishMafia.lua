@@ -45,6 +45,9 @@ local Settings = {
 		Priority = "Crosshair",
 		Prediction = false,
 		PredictTime = 0.12,
+		AimMode = "Snap",
+		SilentAim = false,
+		SilentChance = 100,
 		CenterLock = false,
 		MaxSpeed = 600,
 		HeadExpand = false,
@@ -1138,8 +1141,11 @@ CreateToggle(PageESP, "Tracer", "ESP", "Tracers")
 CreateChoice(PageESP, "Początek tracera", "ESP", "TracerOrigin", { { "Bottom", "Dół" }, { "Center", "Środek" }, { "Top", "Góra" }, { "Mouse", "Kursor" } })
 CreateToggle(PageESP, "Szkielet (R6 / R15)", "ESP", "Skeleton")
 
+local SilentStatusLabel
+
 CreateSection(PageAim, "Główne")
 CreateToggle(PageAim, "Włącz Aimbot (przytrzymaj PPM)", "Aimbot", "Enabled")
+CreateChoice(PageAim, "Tryb celowania", "Aimbot", "AimMode", { { "Snap", "Natychmiast" }, { "Smooth", "Płynny" } })
 CreateToggle(PageAim, "Pokaż okrąg FOV", "Aimbot", "ShowFOV")
 CreateToggle(PageAim, "WallCheck (widoczność)", "Aimbot", "WallCheck")
 CreateToggle(PageAim, "Tylko gracze (bez NPC)", "Aimbot", "PlayersOnly")
@@ -1149,13 +1155,22 @@ CreateToggle(PageAim, "Tryb środka (kursor na środek)", "Aimbot", "CenterLock"
 CreateChoice(PageAim, "Cel", "Aimbot", "TargetPart", { { "Head", "Głowa" }, { "HumanoidRootPart", "Tułów" } })
 CreateChoice(PageAim, "Priorytet celu", "Aimbot", "Priority", { { "Crosshair", "Celownik" }, { "Distance", "Dystans" } })
 CreateSection(PageAim, "Parametry")
-CreateSlider(PageAim, "Płynność (wyższa = wolniej)", "Aimbot", "Smoothness", 5, 50, 1)
+CreateSlider(PageAim, "Płynność (tryb Płynny)", "Aimbot", "Smoothness", 5, 50, 1)
 CreateSlider(PageAim, "Promień FOV", "Aimbot", "FOV", 30, 500, 5, " px")
 CreateSlider(PageAim, "Maksymalny dystans", "Aimbot", "MaxDistance", 50, 2000, 10, " st")
-CreateSlider(PageAim, "Maks. prędkość obrotu", "Aimbot", "MaxSpeed", 100, 1500, 25, " °/s")
+CreateSlider(PageAim, "Maks. prędkość obrotu (tryb Płynny)", "Aimbot", "MaxSpeed", 100, 1500, 25, " °/s")
 CreateSection(PageAim, "Predykcja")
 CreateToggle(PageAim, "Predykcja ruchu celu", "Aimbot", "Prediction")
 CreateSlider(PageAim, "Czas predykcji", "Aimbot", "PredictTime", 0.02, 0.5, 0.01, " s")
+CreateSection(PageAim, "Silent Aim")
+CreateToggle(PageAim, "Silent Aim (bez ruszania kamerą)", "Aimbot", "SilentAim")
+CreateSlider(PageAim, "Szansa trafienia", "Aimbot", "SilentChance", 1, 100, 1, " %")
+do
+	local card = Card(PageAim, 30, false)
+	SilentStatusLabel = Label(card, "Silent Aim: wyłączony", 11, WHITE, Enum.Font.GothamMedium, UDim2.new(1, -28, 1, 0), UDim2.fromOffset(14, 0))
+	SilentStatusLabel.TextTransparency = 0.3
+end
+CreateInfo(PageAim, "Silent Aim kieruje strzał na cel najbliżej środka FOV (głowa), bez ruszania kamerą. Używa FOV, dystansu, WallCheck, Team Check i Tylko gracze z ustawień powyżej. Wymaga executora z hookmetamethod i działa w grach celujących przez Mouse.Hit / Raycast / ScreenPointToRay.", 92)
 CreateSection(PageAim, "Hitbox głowy")
 CreateToggle(PageAim, "Powiększ głowę (+ hitbox)", "Aimbot", "HeadExpand")
 CreateToggle(PageAim, "Widoczna duża głowa (fiolet)", "Aimbot", "HeadVisible")
@@ -1190,7 +1205,7 @@ CreateSection(VisualHolder, "Obiekty (świecą na rainbow)")
 CreateToggle(VisualHolder, "Tesla", "Visual", "Tesla")
 CreateToggle(VisualHolder, "G-Klasa", "Visual", "GKlasa")
 CreateToggle(VisualHolder, "Humvee", "Visual", "Humvee")
-CreateToggle(VisualHolder, "Vintage Pistol", "Visual", "VintagePistol")
+CreateToggle(VisualHolder, "Pistol", "Visual", "VintagePistol")
 CreateToggle(VisualHolder, "Alien Fit (rainbow)", "Visual", "AlienRainbow")
 UpdateVisualVis()
 table.insert(Refreshers, UpdateVisualVis)
@@ -1620,6 +1635,7 @@ end)
 CreateButton(PageSet, "Wyłącz wszystko (Panic)", UI.Red, function()
 	Settings.ESP.Enabled = false
 	Settings.Aimbot.Enabled = false
+	Settings.Aimbot.SilentAim = false
 	Settings.Aimbot.HeadExpand = false
 	Settings.Visual.Rainbow = false
 	Settings.Visual.AlienFit = false
@@ -2008,11 +2024,28 @@ local function FindTarget(cam, targets, ref)
 	return bestE, bestPart
 end
 
+-- Aimbot: tryb Snap = natychmiastowe przyklejenie kamery do celu (glowa),
+-- tryb Smooth = plynny obrot z limitem predkosci.
 local function AimAt(cam, part, ref, dt)
 	local cfg = Settings.Aimbot
 	local vp = cam.ViewportSize
-	local sp = cam:WorldToViewportPoint(AimPos(part))
+	local aimPos = AimPos(part)
+	local sp = cam:WorldToViewportPoint(aimPos)
 	if sp.Z <= 0 then
+		return
+	end
+
+	local cx, cy = vp.X / 2, vp.Y / 2
+	local snap = cfg.AimMode ~= "Smooth"
+
+	-- Snap + celownik na srodku ekranu: kamera patrzy dokladnie w glowe
+	if snap and math.abs(ref.X - cx) < 2 and math.abs(ref.Y - cy) < 2 then
+		local pos = cam.CFrame.Position
+		if (aimPos - pos).Magnitude > 0.01 then
+			local rx, ry = CFrame.lookAt(pos, aimPos):ToOrientation()
+			rx = math.clamp(rx, -MAX_PITCH, MAX_PITCH)
+			cam.CFrame = CFrame.new(pos) * CFrame.fromOrientation(rx, ry, 0)
+		end
 		return
 	end
 
@@ -2022,21 +2055,25 @@ local function AimAt(cam, part, ref, dt)
 		return
 	end
 
-	local cx, cy = vp.X / 2, vp.Y / 2
 	local focal = GetFocal(cam)
 
 	local dYaw = math.atan((sp.X - cx) / focal) - math.atan((ref.X - cx) / focal)
 	local dPitch = math.atan((sp.Y - cy) / focal) - math.atan((ref.Y - cy) / focal)
 
-	local k = 120 / math.max(cfg.Smoothness, 1)
-	local alpha = math.clamp(1 - math.exp(-k * dt), 0.01, 1)
-
-	local sYaw, sPitch = dYaw * alpha, dPitch * alpha
-	local maxStep = math.rad(cfg.MaxSpeed) * dt
-	local mag = math.sqrt(sYaw * sYaw + sPitch * sPitch)
-	if mag > maxStep and mag > 0 then
-		local k2 = maxStep / mag
-		sYaw, sPitch = sYaw * k2, sPitch * k2
+	local sYaw, sPitch
+	if snap then
+		-- pelna korekta w jednej klatce (kursor / celownik laduje na glowie)
+		sYaw, sPitch = dYaw, dPitch
+	else
+		local k = 120 / math.max(cfg.Smoothness, 1)
+		local alpha = math.clamp(1 - math.exp(-k * dt), 0.01, 1)
+		sYaw, sPitch = dYaw * alpha, dPitch * alpha
+		local maxStep = math.rad(cfg.MaxSpeed) * dt
+		local mag = math.sqrt(sYaw * sYaw + sPitch * sPitch)
+		if mag > maxStep and mag > 0 then
+			local k2 = maxStep / mag
+			sYaw, sPitch = sYaw * k2, sPitch * k2
+		end
 	end
 
 	local rx, ry = cam.CFrame:ToOrientation()
@@ -2044,6 +2081,165 @@ local function AimAt(cam, part, ref, dt)
 	ry = ry - sYaw
 
 	cam.CFrame = CFrame.new(cam.CFrame.Position) * CFrame.fromOrientation(rx, ry, 0)
+end
+
+-- SILENT AIM: kamera sie nie rusza. Gra dostaje podmienione Mouse.Hit / Mouse.Target /
+-- Mouse.UnitRay oraz podmienione promienie (Raycast, FindPartOnRay*, Screen/ViewportPointToRay),
+-- tak jakby celownik byl na glowie najblizszego celu w FOV.
+-- Wymaga executora z hookmetamethod + checkcaller + getnamecallmethod.
+local UpdateSilent
+do
+	local Silent = {
+		Part = nil,
+		Pos = nil,
+		Cam = nil,
+		CamPos = Vector3.zero,
+		Look = Vector3.zAxis,
+		HeadPos = nil,
+		Ready = false,
+		Tried = false,
+		Err = nil,
+		LastStatus = nil,
+	}
+	local GREEN = Color3.fromRGB(74, 222, 128)
+	local RED = Color3.fromRGB(248, 113, 113)
+
+	local function SetStatus(text, color)
+		if Silent.LastStatus == text then
+			return
+		end
+		Silent.LastStatus = text
+		if SilentStatusLabel then
+			SilentStatusLabel.Text = text
+			SilentStatusLabel.TextColor3 = color or WHITE
+		end
+	end
+
+	local function Roll()
+		local c = Settings.Aimbot.SilentChance
+		return c >= 100 or math.random(1, 100) <= c
+	end
+
+	-- tylko "strzalowe" promienie: dlugie, startujace przy kamerze / glowie i lecace mniej wiecej tam, gdzie patrzysz
+	-- (krotkie promienie gry, kamery, podlogi itp. zostaja nietkniete)
+	local function RayOk(origin, dir)
+		local mag = dir.Magnitude
+		if mag < 80 then
+			return false
+		end
+		if (origin - Silent.CamPos).Magnitude > 15 then
+			local hp = Silent.HeadPos
+			if not (hp and (origin - hp).Magnitude <= 15) then
+				return false
+			end
+		end
+		return (dir / mag):Dot(Silent.Look) > 0.64
+	end
+
+	local function Install()
+		Silent.Tried = true
+		local HM, NC, CC, GNM, SNM = hookmetamethod, newcclosure, checkcaller, getnamecallmethod, setnamecallmethod
+		if not (HM and CC and GNM) then
+			Silent.Err = "Silent Aim: niedostępny (executor nie ma hookmetamethod)"
+			return
+		end
+		local wrap = NC or function(f)
+			return f
+		end
+		local mouse = LocalPlayer:GetMouse()
+
+		local ok, err = pcall(function()
+			local oldIndex
+			oldIndex = HM(game, "__index", wrap(function(self, key)
+				if self == mouse and Silent.Pos and Settings.Aimbot.SilentAim and not CC() and Roll() then
+					if key == "Hit" then
+						return CFrame.new(Silent.Pos)
+					elseif key == "Target" then
+						return Silent.Part
+					elseif key == "UnitRay" then
+						return Ray.new(Silent.CamPos, (Silent.Pos - Silent.CamPos).Unit)
+					end
+				end
+				return oldIndex(self, key)
+			end))
+
+			local oldNamecall
+			oldNamecall = HM(game, "__namecall", wrap(function(self, ...)
+				local method = GNM()
+				local pos = Silent.Pos
+				if pos and Settings.Aimbot.SilentAim and not CC() and Roll() then
+					if self == Workspace then
+						if method == "Raycast" then
+							local origin, dir, params = ...
+							if typeof(origin) == "Vector3" and typeof(dir) == "Vector3" and RayOk(origin, dir) then
+								if SNM then
+									SNM(method)
+								end
+								return oldNamecall(self, origin, (pos - origin).Unit * dir.Magnitude, params)
+							end
+						elseif method == "FindPartOnRay" or method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRayWithWhitelist" then
+							local ray, a2, a3, a4 = ...
+							if typeof(ray) == "Ray" and RayOk(ray.Origin, ray.Direction) then
+								local nr = Ray.new(ray.Origin, (pos - ray.Origin).Unit * ray.Direction.Magnitude)
+								if SNM then
+									SNM(method)
+								end
+								return oldNamecall(self, nr, a2, a3, a4)
+							end
+						end
+					elseif self == Silent.Cam and (method == "ScreenPointToRay" or method == "ViewportPointToRay") then
+						if SNM then
+							SNM(method)
+						end
+						local ray = oldNamecall(self, ...)
+						return Ray.new(ray.Origin, (pos - ray.Origin).Unit)
+					end
+				end
+				if SNM then
+					SNM(method)
+				end
+				return oldNamecall(self, ...)
+			end))
+		end)
+
+		if ok then
+			Silent.Ready = true
+		else
+			Silent.Err = "Silent Aim: błąd hooków (" .. tostring(err) .. ")"
+		end
+	end
+
+	UpdateSilent = function(cam, targets, ref)
+		local cfg = Settings.Aimbot
+		if not cfg.SilentAim then
+			Silent.Part, Silent.Pos = nil, nil
+			SetStatus("Silent Aim: wyłączony", WHITE)
+			return
+		end
+		if not Silent.Tried then
+			Install()
+		end
+		if not Silent.Ready then
+			Silent.Part, Silent.Pos = nil, nil
+			SetStatus(Silent.Err or "Silent Aim: niedostępny", RED)
+			return
+		end
+
+		local cf = cam.CFrame
+		Silent.Cam, Silent.CamPos, Silent.Look = cam, cf.Position, cf.LookVector
+		local char = LocalPlayer.Character
+		local head = char and char:FindFirstChild("Head")
+		Silent.HeadPos = head and head.Position or nil
+
+		local e, part = FindTarget(cam, targets, ref)
+		if part then
+			Silent.Part, Silent.Pos = part, AimPos(part)
+			SetStatus("Silent Aim: cel – " .. (e.Player and e.Player.Name or e.Model.Name), GREEN)
+		else
+			Silent.Part, Silent.Pos = nil, nil
+			SetStatus("Silent Aim: aktywny, brak celu w FOV", WHITE)
+		end
+	end
 end
 
 local HEAD_COLOR = Color3.fromRGB(147, 51, 234)
@@ -2211,7 +2407,10 @@ local function ProcessAimbot(dt, cam, targets)
 
 	local ref = centerMode and Vector2.new(vp.X / 2, vp.Y / 2) or UserInputService:GetMouseLocation()
 
-	local showFov = cfg.ShowFOV and cfg.Enabled
+	-- Silent Aim (niezalezny od Aimbota: dziala bez przytrzymywania PPM)
+	UpdateSilent(cam, targets, ref)
+
+	local showFov = cfg.ShowFOV and (cfg.Enabled or cfg.SilentAim)
 	Vis(FOVCircle, showFov)
 	if showFov then
 		FOVCircle.Size = UDim2.fromOffset(cfg.FOV * 2, cfg.FOV * 2)
