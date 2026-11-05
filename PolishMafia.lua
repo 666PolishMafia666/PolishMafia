@@ -3221,366 +3221,366 @@ end
 
 local ProcessAlien
 do
-	local ALIEN_IDS = { "91001896367456", "5166069045", "5032460629" }
-	local ALIEN_MAX_TRIES = 5
-	local ALIEN_GREEN = Color3.fromRGB(70, 255, 110)
-	local ALIEN_ORANGE = Color3.fromRGB(255, 190, 60)
-	local ALIEN_RED = Color3.fromRGB(248, 113, 113)
+local ALIEN_IDS = { "91001896367456", "5166069045", "5032460629" }
+local ALIEN_MAX_TRIES = 5
+local ALIEN_GREEN = Color3.fromRGB(70, 255, 110)
+local ALIEN_ORANGE = Color3.fromRGB(255, 190, 60)
+local ALIEN_RED = Color3.fromRGB(248, 113, 113)
 
-	local Alien = {
-		Templates = {},
-		State = {},
-		Tries = {},
-		NextTry = {},
-		Types = {},
-		Names = {},
-		Char = nil,
-		Worn = {},
-		Stored = {},
-		Applied = false,
+local Alien = {
+	Templates = {},
+	State = {},
+	Tries = {},
+	NextTry = {},
+	Types = {},
+	Names = {},
+	Char = nil,
+	Worn = {},
+	Stored = {},
+	Applied = false,
+}
+
+local function AlienStatus(text, color)
+	if AlienStatusLabel then
+		AlienStatusLabel.Text = text
+		AlienStatusLabel.TextColor3 = color or WHITE
+	end
+end
+
+local function UpdateAlienStatus()
+	local ok, loading, failed = 0, 0, 0
+	local bad = {}
+	for _, id in ipairs(ALIEN_IDS) do
+		local st = Alien.State[id]
+		if st == "ok" then
+			ok = ok + 1
+		elseif st == "loading" then
+			loading = loading + 1
+		elseif st == "fail" and (Alien.Tries[id] or 0) >= ALIEN_MAX_TRIES then
+			failed = failed + 1
+			bad[#bad + 1] = id
+		end
+	end
+	local total = #ALIEN_IDS
+	if not Settings.Visual.AlienFit then
+		AlienStatus("Alien Fit: wyłączony", WHITE)
+	elseif failed > 0 and loading == 0 then
+		AlienStatus("Alien Fit: nie wczytano " .. table.concat(bad, ", ") .. " (sprawdź executor)", ALIEN_RED)
+	elseif ok == total then
+		AlienStatus(Alien.Applied and "Alien Fit: aktywny" or ("Alien Fit: wczytano " .. tostring(ok) .. "/" .. tostring(total)), ALIEN_GREEN)
+	else
+		AlienStatus("Alien Fit: ładowanie " .. tostring(ok) .. "/" .. tostring(total) .. "...", ALIEN_ORANGE)
+	end
+end
+
+local function CollectWearables(root, out)
+	if root:IsA("Accessory") or root:IsA("Shirt") or root:IsA("Pants") or root:IsA("ShirtGraphic") then
+		out[#out + 1] = root
+		return
+	end
+	for _, d in ipairs(root:GetChildren()) do
+		CollectWearables(d, out)
+	end
+end
+
+local function FindHeadPart(roots)
+	local best = nil
+	for _, r in ipairs(roots) do
+		if r:IsA("BasePart") then
+			if r.Name == "Head" then
+				return r
+			end
+			best = best or r
+		end
+		for _, d in ipairs(r:GetDescendants()) do
+			if d:IsA("BasePart") then
+				if d.Name == "Head" then
+					return d
+				end
+				best = best or d
+			end
+		end
+	end
+	return best
+end
+
+local function MakeHeadAccessory(part)
+	local acc = Instance.new("Accessory")
+	acc.Name = "PM_AlienHead"
+	local handle = part:Clone()
+	handle.Name = "Handle"
+	for _, d in ipairs(handle:GetDescendants()) do
+		if d:IsA("LuaSourceContainer") or d:IsA("Constraint") or d:IsA("JointInstance") or d:IsA("Sound") then
+			d:Destroy()
+		end
+	end
+	handle.Anchored = false
+	handle.CanCollide = false
+	handle.CanTouch = false
+	handle.CanQuery = false
+	handle.Massless = true
+	handle.Parent = acc
+	acc:SetAttribute("PMHead", true)
+	return acc
+end
+
+local function FetchAsset(id, asHead)
+	local sources = {
+		function()
+			return game:GetObjects("rbxassetid://" .. id)
+		end,
+		function()
+			return game:GetObjects("https://www.roblox.com/asset/?id=" .. id)
+		end,
+		function()
+			return { game:GetService("InsertService"):LoadAsset(tonumber(id)) }
+		end,
 	}
-
-	local function AlienStatus(text, color)
-		if AlienStatusLabel then
-			AlienStatusLabel.Text = text
-			AlienStatusLabel.TextColor3 = color or WHITE
-		end
-	end
-
-	local function UpdateAlienStatus()
-		local ok, loading, failed = 0, 0, 0
-		local bad = {}
-		for _, id in ipairs(ALIEN_IDS) do
-			local st = Alien.State[id]
-			if st == "ok" then
-				ok = ok + 1
-			elseif st == "loading" then
-				loading = loading + 1
-			elseif st == "fail" and (Alien.Tries[id] or 0) >= ALIEN_MAX_TRIES then
-				failed = failed + 1
-				bad[#bad + 1] = id
+	for _, fn in ipairs(sources) do
+		local ok, res = pcall(fn)
+		if ok and type(res) == "table" and #res > 0 then
+			local found = {}
+			for _, r in ipairs(res) do
+				CollectWearables(r, found)
 			end
-		end
-		local total = #ALIEN_IDS
-		if not Settings.Visual.AlienFit then
-			AlienStatus("Alien Fit: wyłączony", WHITE)
-		elseif failed > 0 and loading == 0 then
-			AlienStatus("Alien Fit: nie wczytano " .. table.concat(bad, ", ") .. " (sprawdź executor)", ALIEN_RED)
-		elseif ok == total then
-			AlienStatus(Alien.Applied and "Alien Fit: aktywny" or ("Alien Fit: wczytano " .. tostring(ok) .. "/" .. tostring(total)), ALIEN_GREEN)
-		else
-			AlienStatus("Alien Fit: ładowanie " .. tostring(ok) .. "/" .. tostring(total) .. "...", ALIEN_ORANGE)
-		end
-	end
-
-	local function CollectWearables(root, out)
-		if root:IsA("Accessory") or root:IsA("Shirt") or root:IsA("Pants") or root:IsA("ShirtGraphic") then
-			out[#out + 1] = root
-			return
-		end
-		for _, d in ipairs(root:GetChildren()) do
-			CollectWearables(d, out)
-		end
-	end
-
-	local function FindHeadPart(roots)
-		local best = nil
-		for _, r in ipairs(roots) do
-			if r:IsA("BasePart") then
-				if r.Name == "Head" then
-					return r
+			if #found > 0 then
+				return found
+			end
+			if asHead then
+				local part = FindHeadPart(res)
+				if part then
+					return { MakeHeadAccessory(part) }
 				end
-				best = best or r
 			end
-			for _, d in ipairs(r:GetDescendants()) do
-				if d:IsA("BasePart") then
-					if d.Name == "Head" then
-						return d
+		end
+	end
+	return nil
+end
+
+local function LoadAlien()
+	local now = os.clock()
+	for _, id in ipairs(ALIEN_IDS) do
+		local st = Alien.State[id]
+		local tries = Alien.Tries[id] or 0
+		if st ~= "ok" and st ~= "loading" and tries < ALIEN_MAX_TRIES and now >= (Alien.NextTry[id] or 0) then
+			Alien.State[id] = "loading"
+			task.spawn(function()
+				pcall(function()
+					local info = game:GetService("MarketplaceService"):GetProductInfo(tonumber(id))
+					if info then
+						Alien.Types[id] = info.AssetTypeId
+						Alien.Names[id] = info.Name
 					end
-					best = best or d
-				end
-			end
-		end
-		return best
-	end
-
-	local function MakeHeadAccessory(part)
-		local acc = Instance.new("Accessory")
-		acc.Name = "PM_AlienHead"
-		local handle = part:Clone()
-		handle.Name = "Handle"
-		for _, d in ipairs(handle:GetDescendants()) do
-			if d:IsA("LuaSourceContainer") or d:IsA("Constraint") or d:IsA("JointInstance") or d:IsA("Sound") then
-				d:Destroy()
-			end
-		end
-		handle.Anchored = false
-		handle.CanCollide = false
-		handle.CanTouch = false
-		handle.CanQuery = false
-		handle.Massless = true
-		handle.Parent = acc
-		acc:SetAttribute("PMHead", true)
-		return acc
-	end
-
-	local function FetchAsset(id, asHead)
-		local sources = {
-			function()
-				return game:GetObjects("rbxassetid://" .. id)
-			end,
-			function()
-				return game:GetObjects("https://www.roblox.com/asset/?id=" .. id)
-			end,
-			function()
-				return { game:GetService("InsertService"):LoadAsset(tonumber(id)) }
-			end,
-		}
-		for _, fn in ipairs(sources) do
-			local ok, res = pcall(fn)
-			if ok and type(res) == "table" and #res > 0 then
-				local found = {}
-				for _, r in ipairs(res) do
-					CollectWearables(r, found)
-				end
-				if #found > 0 then
-					return found
-				end
-				if asHead then
-					local part = FindHeadPart(res)
-					if part then
-						return { MakeHeadAccessory(part) }
-					end
-				end
-			end
-		end
-		return nil
-	end
-
-	local function LoadAlien()
-		local now = os.clock()
-		for _, id in ipairs(ALIEN_IDS) do
-			local st = Alien.State[id]
-			local tries = Alien.Tries[id] or 0
-			if st ~= "ok" and st ~= "loading" and tries < ALIEN_MAX_TRIES and now >= (Alien.NextTry[id] or 0) then
-				Alien.State[id] = "loading"
-				task.spawn(function()
-					pcall(function()
-						local info = game:GetService("MarketplaceService"):GetProductInfo(tonumber(id))
-						if info then
-							Alien.Types[id] = info.AssetTypeId
-							Alien.Names[id] = info.Name
-						end
-					end)
-					local found = FetchAsset(id, id == ALIEN_IDS[1] or Alien.Types[id] == 17 or Alien.Types[id] == 79)
-					if found then
-						Alien.Templates[id] = found
-						Alien.State[id] = "ok"
-					else
-						Alien.State[id] = "fail"
-						Alien.Tries[id] = (Alien.Tries[id] or 0) + 1
-						Alien.NextTry[id] = os.clock() + 3
-						warn("[PolishMafia] Alien Fit: proba " .. tostring(Alien.Tries[id]) .. "/" .. tostring(ALIEN_MAX_TRIES) .. " nieudana dla ID " .. id)
-					end
-					UpdateAlienStatus()
 				end)
-			end
+				local found = FetchAsset(id, id == ALIEN_IDS[1] or Alien.Types[id] == 17 or Alien.Types[id] == 79)
+				if found then
+					Alien.Templates[id] = found
+					Alien.State[id] = "ok"
+				else
+					Alien.State[id] = "fail"
+					Alien.Tries[id] = (Alien.Tries[id] or 0) + 1
+					Alien.NextTry[id] = os.clock() + 3
+					warn("[PolishMafia] Alien Fit: proba " .. tostring(Alien.Tries[id]) .. "/" .. tostring(ALIEN_MAX_TRIES) .. " nieudana dla ID " .. id)
+				end
+				UpdateAlienStatus()
+			end)
 		end
 	end
+end
 
-	local function AlienResolved()
-		for _, id in ipairs(ALIEN_IDS) do
-			local st = Alien.State[id]
-			if st ~= "ok" and not (st == "fail" and (Alien.Tries[id] or 0) >= ALIEN_MAX_TRIES) then
-				return false
-			end
-		end
-		return true
-	end
-
-	local function SweepChar(char)
-		for _, c in ipairs(char:GetChildren()) do
-			if (c:IsA("Accessory") or c:IsA("Shirt") or c:IsA("Pants")) and not Alien.Worn[c] then
-				Alien.Stored[#Alien.Stored + 1] = c
-				c.Parent = nil
-			end
-		end
-	end
-
-	local function HideOrigHead(char)
-		if Alien.HeadOrig then
-			return
-		end
-		local head = char:FindFirstChild("Head")
-		if head and head:IsA("BasePart") then
-			local face = head:FindFirstChildOfClass("Decal")
-			Alien.HeadOrig = { Head = head, T = head.Transparency, Face = face, FT = face and face.Transparency }
-			head.Transparency = 1
-			if face then
-				face.Transparency = 1
-			end
-		end
-	end
-
-	local function RestoreOrigHead()
-		local o = Alien.HeadOrig
-		Alien.HeadOrig = nil
-		if o and o.Head and o.Head.Parent then
-			o.Head.Transparency = o.T
-			if o.Face and o.Face.Parent then
-				o.Face.Transparency = o.FT
-			end
-		end
-	end
-
-	local function AttachAsHead(acc, char)
-		local handle = acc:FindFirstChild("Handle")
-		local head = char:FindFirstChild("Head")
-		if not (handle and head and head:IsA("BasePart")) then
+local function AlienResolved()
+	for _, id in ipairs(ALIEN_IDS) do
+		local st = Alien.State[id]
+		if st ~= "ok" and not (st == "fail" and (Alien.Tries[id] or 0) >= ALIEN_MAX_TRIES) then
 			return false
 		end
-		handle.Parent = nil
-		handle.Name = "PM_AlienHead"
-		handle.Anchored = false
-		handle.CanCollide = false
-		handle.CanTouch = false
-		handle.CanQuery = false
-		handle.Massless = true
-		handle.CFrame = head.CFrame
-		handle.Parent = char
-		local w = Instance.new("WeldConstraint")
-		w.Part0 = head
-		w.Part1 = handle
-		w.Parent = handle
-		Alien.Worn[handle] = true
-		HideOrigHead(char)
-		return true
 	end
+	return true
+end
 
-	local function WearAlien(char, hum)
-		for _, id in ipairs(ALIEN_IDS) do
-			local list = Alien.Templates[id]
-			if list then
-				local typ = Alien.Types[id]
-				local headItem = (typ == 17 or typ == 79) or (typ == nil and id == ALIEN_IDS[1])
-				for _, t in ipairs(list) do
-					local c = t:Clone()
-					Alien.Worn[c] = true
-					if c:IsA("Accessory") then
-						local handle = c:FindFirstChild("Handle")
-						local hasAtt = handle ~= nil and handle:FindFirstChildWhichIsA("Attachment") ~= nil
-						local placed = false
-						if c:GetAttribute("PMHead") or (headItem and not hasAtt) then
-							placed = AttachAsHead(c, char)
-						end
-						if not placed then
-							local ok = pcall(function()
-								hum:AddAccessory(c)
-							end)
-							if not ok then
-								c.Parent = char
-							end
-							if handle and handle:FindFirstChildOfClass("FaceControls") then
-								HideOrigHead(char)
-							end
-						end
-					else
-						c.Parent = char
-					end
-				end
-			end
+local function SweepChar(char)
+	for _, c in ipairs(char:GetChildren()) do
+		if (c:IsA("Accessory") or c:IsA("Shirt") or c:IsA("Pants")) and not Alien.Worn[c] then
+			Alien.Stored[#Alien.Stored + 1] = c
+			c.Parent = nil
 		end
 	end
+end
 
-	local function RemoveAlien()
-		local char = Alien.Char
-		local hum = char and char:FindFirstChildOfClass("Humanoid")
-		for c in pairs(Alien.Worn) do
-			c:Destroy()
+local function HideOrigHead(char)
+	if Alien.HeadOrig then
+		return
+	end
+	local head = char:FindFirstChild("Head")
+	if head and head:IsA("BasePart") then
+		local face = head:FindFirstChildOfClass("Decal")
+		Alien.HeadOrig = { Head = head, T = head.Transparency, Face = face, FT = face and face.Transparency }
+		head.Transparency = 1
+		if face then
+			face.Transparency = 1
 		end
-		RestoreOrigHead()
-		if char and char.Parent and hum then
-			for _, c in ipairs(Alien.Stored) do
+	end
+end
+
+local function RestoreOrigHead()
+	local o = Alien.HeadOrig
+	Alien.HeadOrig = nil
+	if o and o.Head and o.Head.Parent then
+		o.Head.Transparency = o.T
+		if o.Face and o.Face.Parent then
+			o.Face.Transparency = o.FT
+		end
+	end
+end
+
+local function AttachAsHead(acc, char)
+	local handle = acc:FindFirstChild("Handle")
+	local head = char:FindFirstChild("Head")
+	if not (handle and head and head:IsA("BasePart")) then
+		return false
+	end
+	handle.Parent = nil
+	handle.Name = "PM_AlienHead"
+	handle.Anchored = false
+	handle.CanCollide = false
+	handle.CanTouch = false
+	handle.CanQuery = false
+	handle.Massless = true
+	handle.CFrame = head.CFrame
+	handle.Parent = char
+	local w = Instance.new("WeldConstraint")
+	w.Part0 = head
+	w.Part1 = handle
+	w.Parent = handle
+	Alien.Worn[handle] = true
+	HideOrigHead(char)
+	return true
+end
+
+local function WearAlien(char, hum)
+	for _, id in ipairs(ALIEN_IDS) do
+		local list = Alien.Templates[id]
+		if list then
+			local typ = Alien.Types[id]
+			local headItem = (typ == 17 or typ == 79) or (typ == nil and id == ALIEN_IDS[1])
+			for _, t in ipairs(list) do
+				local c = t:Clone()
+				Alien.Worn[c] = true
 				if c:IsA("Accessory") then
-					local ok = pcall(function()
-						hum:AddAccessory(c)
-					end)
-					if not ok then
-						c.Parent = char
+					local handle = c:FindFirstChild("Handle")
+					local hasAtt = handle ~= nil and handle:FindFirstChildWhichIsA("Attachment") ~= nil
+					local placed = false
+					if c:GetAttribute("PMHead") or (headItem and not hasAtt) then
+						placed = AttachAsHead(c, char)
+					end
+					if not placed then
+						local ok = pcall(function()
+							hum:AddAccessory(c)
+						end)
+						if not ok then
+							c.Parent = char
+						end
+						if handle and handle:FindFirstChildOfClass("FaceControls") then
+							HideOrigHead(char)
+						end
 					end
 				else
 					c.Parent = char
 				end
 			end
 		end
-		Alien.Char = nil
-		Alien.Worn = {}
-		Alien.Stored = {}
-		Alien.Applied = false
 	end
+end
 
-	ProcessAlien = function()
-		local want = Settings.Visual.AlienFit
-		local char = LocalPlayer.Character
-		local hum = char and char:FindFirstChildOfClass("Humanoid")
-		if want then
-			if not AlienResolved() then
-				LoadAlien()
-				UpdateAlienStatus()
-				return
-			end
-			if not (char and hum) then
-				return
-			end
-			if Alien.Char ~= char then
-				Alien.Char = char
-				Alien.Worn = {}
-				Alien.Stored = {}
-				Alien.HeadOrig = nil
-				SweepChar(char)
-				WearAlien(char, hum)
-				Alien.Applied = true
-			else
-				SweepChar(char)
-			end
-		else
-			if Alien.Applied then
-				RemoveAlien()
-			end
-			for _, id in ipairs(ALIEN_IDS) do
-				if Alien.State[id] == "fail" then
-					Alien.State[id] = nil
-					Alien.Tries[id] = 0
+local function RemoveAlien()
+	local char = Alien.Char
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	for c in pairs(Alien.Worn) do
+		c:Destroy()
+	end
+	RestoreOrigHead()
+	if char and char.Parent and hum then
+		for _, c in ipairs(Alien.Stored) do
+			if c:IsA("Accessory") then
+				local ok = pcall(function()
+					hum:AddAccessory(c)
+				end)
+				if not ok then
+					c.Parent = char
 				end
+			else
+				c.Parent = char
 			end
 		end
-		UpdateAlienStatus()
 	end
+	Alien.Char = nil
+	Alien.Worn = {}
+	Alien.Stored = {}
+	Alien.Applied = false
+end
 
-	CollectAlienParts = function(out)
-		for c in pairs(Alien.Worn) do
-			if c.Parent then
-				if c:IsA("BasePart") then
-					out[#out + 1] = c
-				end
-				if c:IsA("Accessory") or c:IsA("BasePart") then
-					for _, d in ipairs(c:GetDescendants()) do
-						if d:IsA("BasePart") then
-							out[#out + 1] = d
-						end
+ProcessAlien = function()
+	local want = Settings.Visual.AlienFit
+	local char = LocalPlayer.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if want then
+		if not AlienResolved() then
+			LoadAlien()
+			UpdateAlienStatus()
+			return
+		end
+		if not (char and hum) then
+			return
+		end
+		if Alien.Char ~= char then
+			Alien.Char = char
+			Alien.Worn = {}
+			Alien.Stored = {}
+			Alien.HeadOrig = nil
+			SweepChar(char)
+			WearAlien(char, hum)
+			Alien.Applied = true
+		else
+			SweepChar(char)
+		end
+	else
+		if Alien.Applied then
+			RemoveAlien()
+		end
+		for _, id in ipairs(ALIEN_IDS) do
+			if Alien.State[id] == "fail" then
+				Alien.State[id] = nil
+				Alien.Tries[id] = 0
+			end
+		end
+	end
+	UpdateAlienStatus()
+end
+
+CollectAlienParts = function(out)
+	for c in pairs(Alien.Worn) do
+		if c.Parent then
+			if c:IsA("BasePart") then
+				out[#out + 1] = c
+			end
+			if c:IsA("Accessory") or c:IsA("BasePart") then
+				for _, d in ipairs(c:GetDescendants()) do
+					if d:IsA("BasePart") then
+						out[#out + 1] = d
 					end
 				end
 			end
 		end
 	end
+end
 
-	SetAlienTint = function(color)
-		for c in pairs(Alien.Worn) do
-			if c.Parent and (c:IsA("Shirt") or c:IsA("Pants")) then
-				c.Color3 = color or WHITE
-			end
+SetAlienTint = function(color)
+	for c in pairs(Alien.Worn) do
+		if c.Parent and (c:IsA("Shirt") or c:IsA("Pants")) then
+			c.Color3 = color or WHITE
 		end
 	end
+end
 end
 
 local Warned = {}
