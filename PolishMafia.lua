@@ -2598,19 +2598,21 @@ do
 
 	local function CollectPistol(out)
 		local seen = {}
-		local char = LocalPlayer.Character or Workspace:FindFirstChild(LocalPlayer.Name)
-		local tp = (char and char:FindFirstChild("PistoletTP")) or Workspace:FindFirstChild("PistoletTP")
-		local vin = tp and tp:FindFirstChild("Vintage")
-		if vin then
-			AddParts(vin, out, seen)
-		end
-		if char then
-			for _, d in ipairs(char:GetDescendants()) do
-				if not seen[d] and not d:IsA("Accessory") and string.find(string.lower(d.Name), "vintage", 1, true) then
+		local function scan(root)
+			if not root then
+				return
+			end
+			if root.Name == "PistoletTP" then
+				AddParts(root, out, seen)
+			end
+			for _, d in ipairs(root:GetDescendants()) do
+				if d.Name == "PistoletTP" then
 					AddParts(d, out, seen)
 				end
 			end
 		end
+		scan(LocalPlayer.Character)
+		scan(LocalPlayer:FindFirstChild("Backpack"))
 	end
 
 	local function ClearCat(cat)
@@ -3223,7 +3225,8 @@ local ProcessAlien
 do
 	local FACE_ID = "rbxassetid://210879420742319"
 	local HEAD_SCALE = 1.25
-	local ALIEN_GREEN = Color3.fromRGB(70, 255, 110)
+	local ALIEN_GREEN = Color3.fromRGB(0, 255, 70)
+	local FACE_COLOR = Color3.fromRGB(0, 255, 70)
 	local ALIEN_ORANGE = Color3.fromRGB(255, 190, 60)
 
 	local BC_PROPS = { "HeadColor3", "LeftArmColor3", "RightArmColor3", "TorsoColor3", "LeftLegColor3", "RightLegColor3" }
@@ -3236,7 +3239,7 @@ do
 	}
 
 	local function NewState()
-		return { Parts = {}, Clothes = {}, Accs = {}, Faces = {} }
+		return { Parts = {}, Clothes = {}, Accs = {}, Hidden = {}, HiddenSet = {}, Mine = nil }
 	end
 	Alien.S = NewState()
 
@@ -3257,14 +3260,37 @@ do
 		end
 	end
 
-	local function FindFaces(head)
-		local out = {}
+	local function HideOldFaces(head, S)
 		for _, d in ipairs(head:GetDescendants()) do
-			if (d:IsA("Decal") or d:IsA("Texture")) and string.lower(d.Name) == "face" then
-				out[#out + 1] = d
+			if (d:IsA("Decal") or d:IsA("Texture")) and string.lower(d.Name) == "face" and d ~= S.Mine then
+				if not S.HiddenSet[d] then
+					S.HiddenSet[d] = true
+					S.Hidden[#S.Hidden + 1] = { Inst = d, Parent = d.Parent }
+				end
+				d.Parent = nil
 			end
 		end
-		return out
+	end
+
+	local function EnsureMyFace(head, S)
+		local f = S.Mine
+		if not (f and f.Parent == head) then
+			if f then
+				f:Destroy()
+			end
+			f = Instance.new("Decal")
+			f.Name = "PM_AlienFace"
+			f.Face = Enum.NormalId.Front
+			f.Transparency = 0
+			f.Parent = head
+			S.Mine = f
+		end
+		if f.Texture ~= FACE_ID then
+			f.Texture = FACE_ID
+		end
+		if f.Color3 ~= FACE_COLOR then
+			f.Color3 = FACE_COLOR
+		end
 	end
 
 	local function Apply(char)
@@ -3279,7 +3305,7 @@ do
 			end
 		end
 
-		-- głowa + twarz
+		-- głowa: powiększenie, usunięcie starej twarzy, nowa twarz
 		local head = char:FindFirstChild("Head")
 		if head and head:IsA("BasePart") then
 			local mesh = head:FindFirstChildOfClass("SpecialMesh")
@@ -3301,24 +3327,8 @@ do
 				end
 			end
 
-			local faces = FindFaces(head)
-			if #faces == 0 then
-				local f = Instance.new("Decal")
-				f.Name = "face"
-				f.Face = Enum.NormalId.Front
-				f.Parent = head
-				S.Faces[f] = { Created = true }
-				faces = { f }
-			end
-			for _, f in ipairs(faces) do
-				if not S.Faces[f] then
-					S.Faces[f] = { Tex = f.Texture, Col = f.Color3 }
-				end
-				if f.Texture ~= FACE_ID then
-					f.Texture = FACE_ID
-				end
-				f.Color3 = tint
-			end
+			HideOldFaces(head, S)
+			EnsureMyFace(head, S)
 		end
 
 		-- BodyColors
@@ -3389,14 +3399,14 @@ do
 			S.HeadSize.Part.Size = S.HeadSize.Size
 		end
 
-		for f, o in pairs(S.Faces) do
-			if f.Parent then
-				if o.Created then
-					f:Destroy()
-				else
-					f.Texture = o.Tex
-					f.Color3 = o.Col
-				end
+		-- usuń moją twarz, przywróć oryginalne
+		if S.Mine then
+			S.Mine:Destroy()
+			S.Mine = nil
+		end
+		for _, h in ipairs(S.Hidden) do
+			if h.Inst and h.Parent and h.Parent.Parent then
+				h.Inst.Parent = h.Parent
 			end
 		end
 
@@ -3471,10 +3481,10 @@ do
 		UpdateAlienStatus()
 	end
 
-	-- rainbow działa przez SetAlienTint (nie przez Neon na częściach)
 	CollectAlienParts = function(out)
 	end
 
+	-- rainbow zmienia tylko ciało, twarz zawsze zostaje zielona
 	SetAlienTint = function(color)
 		Alien.Tint = color
 		if Alien.Applied and Settings.Visual.AlienFit and Alien.Char and Alien.Char.Parent then
