@@ -38,6 +38,7 @@ local Settings = {
 		FOV = 150,
 		MaxDistance = 500,
 		WallCheck = true,
+		MultiRay = true,
 		ShowFOV = false,
 		IgnoreDummy = true,
 		PlayersOnly = false,
@@ -45,9 +46,12 @@ local Settings = {
 		Priority = "Crosshair",
 		Prediction = false,
 		PredictTime = 0.12,
+		AutoPredict = true,
 		AimMode = "Snap",
 		SilentAim = false,
 		SilentChance = 100,
+		StickySwitch = 0.12,
+		StickyTolerance = 1.3,
 		CenterLock = false,
 		MaxSpeed = 600,
 		HeadExpand = false,
@@ -498,8 +502,12 @@ local Main = New("CanvasGroup", {
 	BorderSizePixel = 0,
 	Parent = Root,
 })
-Corner(Main, 10)
+Corner(Main, 12)
 local MainStroke = Stroke(Main, UI.Line, 1, 0)
+local MainStrokeGradient = Instance.new("UIGradient")
+MainStrokeGradient.Color = ColorSequence.new(Color3.fromRGB(70, 70, 82), UI.Line)
+MainStrokeGradient.Rotation = 90
+MainStrokeGradient.Parent = MainStroke
 
 local Header = New("Frame", {
 	Name = "Header",
@@ -671,6 +679,8 @@ local function CreatePage()
 		Visible = false,
 		Parent = Content,
 	})
+	local scale = Instance.new("UIScale")
+	scale.Parent = group
 	local p = New("ScrollingFrame", {
 		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
@@ -1052,18 +1062,28 @@ local function SelectTab(name, instant)
 		end
 		table.clear(t.Tweens)
 
-		local g = t.Group
+		local g, sc = t.Group, t.Scale
 		if active then
 			g.Visible = true
 			if instant then
 				g.Position = UDim2.new()
+				if sc then
+					sc.Scale = 1
+				end
 			else
 				g.Position = UDim2.fromOffset(0, 16)
 				t.Tweens[1] = Tween(g, 0.28, { Position = UDim2.new() }, Enum.EasingStyle.Quart)
+				if sc then
+					sc.Scale = 0.975
+					t.Tweens[2] = Tween(sc, 0.28, { Scale = 1 }, Enum.EasingStyle.Quart)
+				end
 			end
 		else
 			g.Visible = false
 			g.Position = UDim2.new()
+			if sc then
+				sc.Scale = 1
+			end
 		end
 	end
 end
@@ -1094,7 +1114,7 @@ local function CreateTab(name, order)
 	lbl.TextTransparency = 0.4
 
 	local page, group = CreatePage()
-	Tabs[name] = { Button = btn, Label = lbl, Marker = marker, Group = group, Page = page, Tweens = {} }
+	Tabs[name] = { Button = btn, Label = lbl, Marker = marker, Group = group, Scale = group:FindFirstChildOfClass("UIScale"), Page = page, Tweens = {} }
 
 	btn.MouseEnter:Connect(function()
 		if CurrentTab ~= name then
@@ -1142,12 +1162,29 @@ CreateChoice(PageESP, "Początek tracera", "ESP", "TracerOrigin", { { "Bottom", 
 CreateToggle(PageESP, "Szkielet (R6 / R15)", "ESP", "Skeleton")
 
 local SilentStatusLabel
+local AimStatusLabel, AimStatusDot
+
+CreateSection(PageAim, "Status")
+do
+	local card = Card(PageAim, 40, false)
+	AimStatusDot = New("Frame", {
+		Size = UDim2.fromOffset(8, 8),
+		Position = UDim2.new(0, 14, 0.5, -4),
+		BackgroundColor3 = UI.Off,
+		BorderSizePixel = 0,
+		Parent = card,
+	})
+	Corner(AimStatusDot, 4)
+	AimStatusLabel = Label(card, "Aimbot: wyłączony", 13, WHITE, Enum.Font.GothamMedium, UDim2.new(1, -40, 1, 0), UDim2.fromOffset(32, 0))
+	AimStatusLabel.TextTransparency = 0.25
+end
 
 CreateSection(PageAim, "Główne")
 CreateToggle(PageAim, "Włącz Aimbot (przytrzymaj PPM)", "Aimbot", "Enabled")
 CreateChoice(PageAim, "Tryb celowania", "Aimbot", "AimMode", { { "Snap", "Natychmiast" }, { "Smooth", "Płynny" } })
 CreateToggle(PageAim, "Pokaż okrąg FOV", "Aimbot", "ShowFOV")
 CreateToggle(PageAim, "WallCheck (widoczność)", "Aimbot", "WallCheck")
+CreateToggle(PageAim, "MultiRay (odporny WallCheck)", "Aimbot", "MultiRay")
 CreateToggle(PageAim, "Tylko gracze (bez NPC)", "Aimbot", "PlayersOnly")
 CreateToggle(PageAim, "Ignoruj Dummy", "Aimbot", "IgnoreDummy")
 CreateToggle(PageAim, "Team Check (pomiń drużynę)", "Aimbot", "TeamCheck")
@@ -1159,9 +1196,13 @@ CreateSlider(PageAim, "Płynność (tryb Płynny)", "Aimbot", "Smoothness", 5, 5
 CreateSlider(PageAim, "Promień FOV", "Aimbot", "FOV", 30, 500, 5, " px")
 CreateSlider(PageAim, "Maksymalny dystans", "Aimbot", "MaxDistance", 50, 2000, 10, " st")
 CreateSlider(PageAim, "Maks. prędkość obrotu (tryb Płynny)", "Aimbot", "MaxSpeed", 100, 1500, 25, " °/s")
+CreateSection(PageAim, "Stabilizacja celu")
+CreateSlider(PageAim, "Tolerancja trzymania celu", "Aimbot", "StickyTolerance", 1, 2.5, 0.05, "x")
+CreateInfo(PageAim, "Wyższa tolerancja = aimbot trzyma już namierzony cel nawet gdy na chwilę wypadnie poza środek FOV, zamiast migać między kilkoma graczami.", 50)
 CreateSection(PageAim, "Predykcja")
 CreateToggle(PageAim, "Predykcja ruchu celu", "Aimbot", "Prediction")
-CreateSlider(PageAim, "Czas predykcji", "Aimbot", "PredictTime", 0.02, 0.5, 0.01, " s")
+CreateToggle(PageAim, "Auto-predykcja (wg dystansu)", "Aimbot", "AutoPredict")
+CreateSlider(PageAim, "Bazowy czas predykcji", "Aimbot", "PredictTime", 0.02, 0.5, 0.01, " s")
 CreateSection(PageAim, "Silent Aim")
 CreateToggle(PageAim, "Silent Aim (bez ruszania kamerą)", "Aimbot", "SilentAim")
 CreateSlider(PageAim, "Szansa trafienia", "Aimbot", "SilentChance", 1, 100, 1, " %")
@@ -1714,6 +1755,7 @@ DragBar.InputBegan:Connect(function(input)
 		dragging = true
 		dragStart = Vector2.new(input.Position.X, input.Position.Y)
 		dragOrigin = DragTarget
+		MainStrokeGradient.Enabled = false
 		Tween(MainStroke, 0.15, { Color = UI.Blue })
 	end
 end)
@@ -1726,7 +1768,10 @@ end)
 UserInputService.InputEnded:Connect(function(input)
 	if dragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
 		dragging = false
-		Tween(MainStroke, 0.25, { Color = UI.Line })
+		local tw = Tween(MainStroke, 0.25, { Color = UI.Line })
+		tw.Completed:Connect(function()
+			MainStrokeGradient.Enabled = true
+		end)
 	end
 end)
 
@@ -1898,6 +1943,23 @@ local FOVCircle = New("Frame", {
 Corner(FOVCircle, UDim.new(1, 0))
 local FOVStroke = Stroke(FOVCircle, Theme.Accent, 1.5, 0.25)
 
+local AIM_GREEN = Color3.fromRGB(74, 222, 128)
+local AIM_GREY = Color3.fromRGB(80, 80, 92)
+local LastAimStatus = nil
+
+local function SetAimStatus(text, color)
+	if LastAimStatus == text then
+		return
+	end
+	LastAimStatus = text
+	if AimStatusLabel then
+		AimStatusLabel.Text = text
+	end
+	if AimStatusDot then
+		Tween(AimStatusDot, 0.15, { BackgroundColor3 = color or AIM_GREY })
+	end
+end
+
 local AimEntry, AimPart = nil, nil
 local AimRayParams = RaycastParams.new()
 AimRayParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -1917,14 +1979,38 @@ local function GetFocal(cam)
 	return (cam.ViewportSize.Y / 2) / math.tan(math.rad(cam.FieldOfView) / 2)
 end
 
+-- punkty wokol czesci ciala uzywane przez MultiRay (gorny/dolny/lewy/prawy brzeg + srodek)
+local VIS_OFFSETS = {
+	Vector3.new(0, 0, 0),
+	Vector3.new(0, 0.4, 0),
+	Vector3.new(0, -0.4, 0),
+	Vector3.new(0.4, 0, 0),
+	Vector3.new(-0.4, 0, 0),
+}
+
 local function IsVisible(cam, part)
-	if not Settings.Aimbot.WallCheck then
+	local cfg = Settings.Aimbot
+	if not cfg.WallCheck then
 		return true
 	end
 	local char = LocalPlayer.Character
 	AimRayParams.FilterDescendantsInstances = char and { char, cam, part.Parent } or { cam, part.Parent }
 	local origin = cam.CFrame.Position
-	return Workspace:Raycast(origin, part.Position - origin, AimRayParams) == nil
+	local size = part.Size
+
+	if not cfg.MultiRay then
+		return Workspace:Raycast(origin, part.Position - origin, AimRayParams) == nil
+	end
+
+	-- kilka promieni rozlozonych po hitboxie: cel jest widoczny jesli chociaz jeden trafia bez przeszkody
+	for i = 1, #VIS_OFFSETS do
+		local off = VIS_OFFSETS[i]
+		local target = part.Position + Vector3.new(off.X * size.X, off.Y * size.Y, off.Z * size.Z)
+		if Workspace:Raycast(origin, target - origin, AimRayParams) == nil then
+			return true
+		end
+	end
+	return false
 end
 
 local function GetAimPart(e)
@@ -1951,13 +2037,35 @@ local function AimAllowed(e)
 	return true
 end
 
-local function AimPos(part)
+local AccelCache = setmetatable({}, { __mode = "k" }) -- [part] = {Vel, Time}
+
+-- Predykcja: do predkosci liniowej celu dolicza krotki wklad przyspieszenia (zmiana predkosci
+-- w ostatniej klatce), co lepiej lapie gwaltowne skrety / strafe niz sam liniowy wektor.
+local function AimPos(part, camPos)
 	local cfg = Settings.Aimbot
 	local p = part.Position
-	if cfg.Prediction then
-		p = p + part.AssemblyLinearVelocity * cfg.PredictTime
+	if not cfg.Prediction then
+		return p
 	end
-	return p
+
+	local vel = part.AssemblyLinearVelocity
+	local t = cfg.PredictTime
+
+	if cfg.AutoPredict then
+		-- dluzszy dystans = dluzszy czas lotu / reakcji, lekko skalowane
+		local dist = camPos and (p - camPos).Magnitude or 0
+		t = math.clamp(cfg.PredictTime + dist * 0.00035, 0.02, 0.5)
+	end
+
+	local now = os.clock()
+	local c = AccelCache[part]
+	local accel = Vector3.zero
+	if c and now - c.Time > 0 and now - c.Time < 0.25 then
+		accel = (vel - c.Vel) / (now - c.Time)
+	end
+	AccelCache[part] = { Vel = vel, Time = now }
+
+	return p + vel * t + 0.5 * accel * t * t
 end
 
 local VisLostAt = nil
@@ -1978,7 +2086,7 @@ local function StickyValid(cam, ref)
 		return false
 	end
 	local sp, on = cam:WorldToViewportPoint(part.Position)
-	if not on or (Vector2.new(sp.X, sp.Y) - ref).Magnitude > cfg.FOV * 1.25 then
+	if not on or (Vector2.new(sp.X, sp.Y) - ref).Magnitude > cfg.FOV * cfg.StickyTolerance then
 		return false
 	end
 	if IsVisible(cam, part) then
@@ -1990,6 +2098,9 @@ local function StickyValid(cam, ref)
 	return now - VisLostAt < 0.2
 end
 
+-- Wybor celu: lacznie bierze pod uwage odleglosc na ekranie / w swiecie (wg Priorytetu)
+-- oraz lekki bonus "histerezy" dla celu juz zablokowanego, zeby aimbot nie skakal
+-- miedzy dwoma blisko stojacymi graczami co klatke.
 local function FindTarget(cam, targets, ref)
 	local cfg = Settings.Aimbot
 	local bestE, bestPart
@@ -1997,6 +2108,7 @@ local function FindTarget(cam, targets, ref)
 	local camPos = cam.CFrame.Position
 	local maxD2 = cfg.MaxDistance * cfg.MaxDistance
 	local byDistance = cfg.Priority == "Distance"
+	local curModel = AimEntry and AimEntry.Model
 
 	for _, e in ipairs(targets) do
 		if AimAllowed(e) then
@@ -2011,6 +2123,9 @@ local function FindTarget(cam, targets, ref)
 						local d = (Vector2.new(sp.X, sp.Y) - ref).Magnitude
 						if d <= cfg.FOV then
 							local score = byDistance and d2 or d
+							if e.Model == curModel then
+								score = score * 0.8
+							end
 							if score < bestScore and IsVisible(cam, part) then
 								bestScore = score
 								bestE, bestPart = e, part
@@ -2029,7 +2144,7 @@ end
 local function AimAt(cam, part, ref, dt)
 	local cfg = Settings.Aimbot
 	local vp = cam.ViewportSize
-	local aimPos = AimPos(part)
+	local aimPos = AimPos(part, cam.CFrame.Position)
 	local sp = cam:WorldToViewportPoint(aimPos)
 	if sp.Z <= 0 then
 		return
@@ -2233,7 +2348,7 @@ do
 
 		local e, part = FindTarget(cam, targets, ref)
 		if part then
-			Silent.Part, Silent.Pos = part, AimPos(part)
+			Silent.Part, Silent.Pos = part, AimPos(part, Silent.CamPos)
 			SetStatus("Silent Aim: cel – " .. (e.Player and e.Player.Name or e.Model.Name), GREEN)
 		else
 			Silent.Part, Silent.Pos = nil, nil
@@ -2432,6 +2547,17 @@ local function ProcessAimbot(dt, cam, targets)
 	end
 	if showFov then
 		FOVStroke.Color = locked and WHITE or Theme.Accent
+	end
+
+	if not cfg.Enabled then
+		SetAimStatus("Aimbot: wyłączony", AIM_GREY)
+	elseif not IsHoldingAimKey then
+		SetAimStatus("Aimbot: gotowy (przytrzymaj PPM)", UI.Blue)
+	elseif locked then
+		local nm = AimEntry and (AimEntry.Player and AimEntry.Player.Name or AimEntry.Model.Name) or "?"
+		SetAimStatus("Aimbot: cel – " .. nm, AIM_GREEN)
+	else
+		SetAimStatus("Aimbot: szukam celu w FOV...", UI.Blue)
 	end
 end
 
