@@ -3222,15 +3222,23 @@ end
 local ProcessAlien
 do
 	local FACE_ID = "rbxassetid://210879420742319"
+	local HEAD_SCALE = 1.25
 	local ALIEN_GREEN = Color3.fromRGB(70, 255, 110)
 	local ALIEN_ORANGE = Color3.fromRGB(255, 190, 60)
+
+	local BC_PROPS = { "HeadColor3", "LeftArmColor3", "RightArmColor3", "TorsoColor3", "LeftLegColor3", "RightLegColor3" }
 
 	local Alien = {
 		Char = nil,
 		Applied = false,
-		Face = nil,
-		Stored = {},
+		Tint = nil,
+		S = nil,
 	}
+
+	local function NewState()
+		return { Parts = {}, Clothes = {}, Accs = {}, Faces = {} }
+	end
+	Alien.S = NewState()
 
 	local function AlienStatus(text, color)
 		if AlienStatusLabel then
@@ -3249,48 +3257,181 @@ do
 		end
 	end
 
+	local function FindFaces(head)
+		local out = {}
+		for _, d in ipairs(head:GetDescendants()) do
+			if (d:IsA("Decal") or d:IsA("Texture")) and string.lower(d.Name) == "face" then
+				out[#out + 1] = d
+			end
+		end
+		return out
+	end
+
 	local function Apply(char)
-		-- usuń wszystkie akcesoria (i zapamiętaj, żeby je przywrócić)
+		local S = Alien.S
+		local tint = Alien.Tint or ALIEN_GREEN
+
+		-- akcesoria -> usuń
 		for _, c in ipairs(char:GetChildren()) do
 			if c:IsA("Accessory") then
-				Alien.Stored[#Alien.Stored + 1] = c
+				S.Accs[#S.Accs + 1] = c
 				c.Parent = nil
 			end
 		end
 
-		-- zmień twarz
+		-- głowa + twarz
 		local head = char:FindFirstChild("Head")
 		if head and head:IsA("BasePart") then
-			local face = head:FindFirstChildOfClass("Decal")
-			if not face then
-				face = Instance.new("Decal")
-				face.Name = "face"
-				face.Face = Enum.NormalId.Front
-				face.Parent = head
-				Alien.Face = { Decal = face, Created = true }
-			elseif not Alien.Face then
-				Alien.Face = { Decal = face, Tex = face.Texture }
+			local mesh = head:FindFirstChildOfClass("SpecialMesh")
+			if mesh then
+				if not S.HeadMesh then
+					S.HeadMesh = { Mesh = mesh, Scale = mesh.Scale }
+				end
+				local want = S.HeadMesh.Scale * HEAD_SCALE
+				if mesh.Scale ~= want then
+					mesh.Scale = want
+				end
+			else
+				if not S.HeadSize then
+					S.HeadSize = { Part = head, Size = head.Size }
+				end
+				local want = S.HeadSize.Size * HEAD_SCALE
+				if head.Size ~= want then
+					head.Size = want
+				end
 			end
-			if face.Texture ~= FACE_ID then
-				face.Texture = FACE_ID
+
+			local faces = FindFaces(head)
+			if #faces == 0 then
+				local f = Instance.new("Decal")
+				f.Name = "face"
+				f.Face = Enum.NormalId.Front
+				f.Parent = head
+				S.Faces[f] = { Created = true }
+				faces = { f }
+			end
+			for _, f in ipairs(faces) do
+				if not S.Faces[f] then
+					S.Faces[f] = { Tex = f.Texture, Col = f.Color3 }
+				end
+				if f.Texture ~= FACE_ID then
+					f.Texture = FACE_ID
+				end
+				f.Color3 = tint
+			end
+		end
+
+		-- BodyColors
+		local bc = char:FindFirstChildOfClass("BodyColors")
+		if not bc then
+			bc = Instance.new("BodyColors")
+			bc.Parent = char
+			S.BC = { Inst = bc, Created = true }
+		elseif not S.BC then
+			local orig = {}
+			for _, p in ipairs(BC_PROPS) do
+				orig[p] = bc[p]
+			end
+			S.BC = { Inst = bc, Orig = orig }
+		end
+		for _, p in ipairs(BC_PROPS) do
+			if bc[p] ~= tint then
+				bc[p] = tint
+			end
+		end
+
+		-- kolor części ciała bezpośrednio
+		for _, c in ipairs(char:GetChildren()) do
+			if c:IsA("BasePart") and c.Name ~= "HumanoidRootPart" then
+				if S.Parts[c] == nil then
+					S.Parts[c] = c.Color
+				end
+				if c.Color ~= tint then
+					c.Color = tint
+				end
+			end
+		end
+
+		-- koszulka, spodnie, grafika -> 0
+		for _, c in ipairs(char:GetChildren()) do
+			if c:IsA("Shirt") then
+				if S.Clothes[c] == nil then
+					S.Clothes[c] = c.ShirtTemplate
+				end
+				if c.ShirtTemplate ~= "rbxassetid://0" then
+					c.ShirtTemplate = "rbxassetid://0"
+				end
+			elseif c:IsA("Pants") then
+				if S.Clothes[c] == nil then
+					S.Clothes[c] = c.PantsTemplate
+				end
+				if c.PantsTemplate ~= "rbxassetid://0" then
+					c.PantsTemplate = "rbxassetid://0"
+				end
+			elseif c:IsA("ShirtGraphic") then
+				if S.Clothes[c] == nil then
+					S.Clothes[c] = c.Graphic
+				end
+				if c.Graphic ~= "rbxassetid://0" then
+					c.Graphic = "rbxassetid://0"
+				end
 			end
 		end
 	end
 
 	local function Restore()
-		local f = Alien.Face
-		if f and f.Decal and f.Decal.Parent then
-			if f.Created then
-				f.Decal:Destroy()
-			else
-				f.Decal.Texture = f.Tex
+		local S = Alien.S
+
+		if S.HeadMesh and S.HeadMesh.Mesh and S.HeadMesh.Mesh.Parent then
+			S.HeadMesh.Mesh.Scale = S.HeadMesh.Scale
+		end
+		if S.HeadSize and S.HeadSize.Part and S.HeadSize.Part.Parent then
+			S.HeadSize.Part.Size = S.HeadSize.Size
+		end
+
+		for f, o in pairs(S.Faces) do
+			if f.Parent then
+				if o.Created then
+					f:Destroy()
+				else
+					f.Texture = o.Tex
+					f.Color3 = o.Col
+				end
+			end
+		end
+
+		if S.BC and S.BC.Inst and S.BC.Inst.Parent then
+			if S.BC.Created then
+				S.BC.Inst:Destroy()
+			elseif S.BC.Orig then
+				for p, v in pairs(S.BC.Orig) do
+					S.BC.Inst[p] = v
+				end
+			end
+		end
+
+		for part, col in pairs(S.Parts) do
+			if part.Parent then
+				part.Color = col
+			end
+		end
+
+		for inst, val in pairs(S.Clothes) do
+			if inst.Parent then
+				if inst:IsA("Shirt") then
+					inst.ShirtTemplate = val
+				elseif inst:IsA("Pants") then
+					inst.PantsTemplate = val
+				else
+					inst.Graphic = val
+				end
 			end
 		end
 
 		local char = Alien.Char
 		local hum = char and char:FindFirstChildOfClass("Humanoid")
 		if char and char.Parent and hum then
-			for _, acc in ipairs(Alien.Stored) do
+			for _, acc in ipairs(S.Accs) do
 				local ok = pcall(function()
 					hum:AddAccessory(acc)
 				end)
@@ -3300,8 +3441,7 @@ do
 			end
 		end
 
-		Alien.Face = nil
-		Alien.Stored = {}
+		Alien.S = NewState()
 		Alien.Char = nil
 		Alien.Applied = false
 	end
@@ -3315,9 +3455,7 @@ do
 				return
 			end
 			if Alien.Char ~= char then
-				-- nowa postać (respawn): stare instancje nie istnieją
-				Alien.Face = nil
-				Alien.Stored = {}
+				Alien.S = NewState()
 				Alien.Char = char
 			end
 			local ok, err = pcall(Apply, char)
@@ -3333,11 +3471,15 @@ do
 		UpdateAlienStatus()
 	end
 
-	-- kolory/rainbow nie dotyczą już Alien Fit
+	-- rainbow działa przez SetAlienTint (nie przez Neon na częściach)
 	CollectAlienParts = function(out)
 	end
 
 	SetAlienTint = function(color)
+		Alien.Tint = color
+		if Alien.Applied and Settings.Visual.AlienFit and Alien.Char and Alien.Char.Parent then
+			pcall(Apply, Alien.Char)
+		end
 	end
 end
 
