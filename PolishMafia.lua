@@ -81,6 +81,18 @@ local Settings = {
 		InfJump = false,
 		Noclip = false,
 	},
+	Troll = {
+		Dance = false,
+		DanceId = "Dance2",
+		Scale = false,
+		ScaleAmount = 1,
+		AnimSpeed = false,
+		AnimSpeedAmount = 1,
+		Drunk = false,
+		DrunkStrength = 1,
+		FartCannon = false,
+		Confetti = false,
+	},
 }
 
 local DefaultSettings = {}
@@ -1267,9 +1279,10 @@ local PageESP = CreateTab("ESP", 1)
 local PageAim = CreateTab("Aimbot", 2)
 local PageVisual = CreateTab("Visual", 3)
 local PageMove = CreateTab("Movement", 4)
-local PageFriends = CreateTab("Friendz", 5)
-local PageConfig = CreateTab("Config", 6)
-local PageSet = CreateTab("Ustawienia", 7)
+local PageTroll = CreateTab("Troll", 5)
+local PageFriends = CreateTab("Friendz", 6)
+local PageConfig = CreateTab("Config", 7)
+local PageSet = CreateTab("Ustawienia", 8)
 
 CreateSection(PageESP, "Główne")
 CreateToggle(PageESP, "Włącz ESP (tylko gracze)", "ESP", "Enabled")
@@ -1292,6 +1305,7 @@ CreateToggle(PageESP, "Szkielet (R6 / R15)", "ESP", "Skeleton")
 
 local SilentStatusLabel
 local AimStatusLabel, AimStatusDot
+local CamStatusLabel
 
 CreateSection(PageAim, "Status")
 do
@@ -1306,6 +1320,11 @@ do
 	Corner(AimStatusDot, 4)
 	AimStatusLabel = Label(card, "Aimbot: wyłączony", 13, WHITE, Enum.Font.GothamMedium, UDim2.new(1, -40, 1, 0), UDim2.fromOffset(32, 0))
 	AimStatusLabel.TextTransparency = 0.25
+end
+do
+	local card = Card(SectionTarget[PageAim], 26, false)
+	CamStatusLabel = Label(card, "Kamera: tryb gry", 11, WHITE, Enum.Font.GothamMedium, UDim2.new(1, -28, 1, 0), UDim2.fromOffset(14, 0))
+	CamStatusLabel.TextTransparency = 0.45
 end
 
 CreateSection(PageAim, "Główne")
@@ -1346,6 +1365,8 @@ CreateSection(PageAim, "Hitbox głowy")
 CreateToggle(PageAim, "Powiększ głowę (+ hitbox)", "Aimbot", "HeadExpand")
 CreateToggle(PageAim, "Widoczna duża głowa (fiolet)", "Aimbot", "HeadVisible")
 CreateSlider(PageAim, "Rozmiar głowy", "Aimbot", "HeadSize", 1, 12, 0.25, "x")
+CreateSection(PageAim, "Informacje")
+CreateInfo(PageAim, "Aimbot przejmuje kamerę (CameraType: Scriptable) tylko w chwili, gdy faktycznie celuje – to naprawia gry, w których własny skrypt kamery \"odbijał\" naszą rotację z powrotem. Po puszczeniu PPM albo zamknięciu menu kamera wraca do normalnego trybu gry.", 70)
 
 local VisualHolder
 local AlienStatusLabel
@@ -1404,6 +1425,35 @@ CreateToggle(PageMove, "Nieskończony skok", "Movement", "InfJump")
 CreateToggle(PageMove, "Noclip (przenikanie)", "Movement", "Noclip")
 CreateSection(PageMove, "Informacje")
 CreateInfo(PageMove, "Fly nie ma domyślnego klawisza: kliknij „Bind Fly”, naciśnij wybrany klawisz (Esc = usuń). Lot: W / A / S / D względem kamery, Spacja = w górę, Ctrl lub Q = w dół. Siedząc w aucie (Seat) leci cały pojazd i obraca się przodem tam, gdzie patrzy kamera.", 84)
+
+local TrollScaleLabel
+local ConfettiBurst, ProcessTroll
+
+CreateSection(PageTroll, "Animacje")
+CreateToggle(PageTroll, "Pętla tańca", "Troll", "Dance")
+CreateChoice(PageTroll, "Taniec", "Troll", "DanceId", { { "Dance1", "Taniec 1" }, { "Dance2", "Taniec 2" }, { "Dance3", "Taniec 3" }, { "Laugh", "Śmiech" } })
+CreateToggle(PageTroll, "Zmień prędkość animacji", "Troll", "AnimSpeed")
+CreateSlider(PageTroll, "Prędkość animacji", "Troll", "AnimSpeedAmount", 0.1, 4, 0.1, "x")
+CreateSection(PageTroll, "Postać")
+CreateToggle(PageTroll, "Zmień skalę postaci", "Troll", "Scale")
+CreateSlider(PageTroll, "Skala (R15)", "Troll", "ScaleAmount", 0.2, 4, 0.1, "x")
+do
+	local card = Card(SectionTarget[PageTroll], 26, false)
+	TrollScaleLabel = Label(card, "Skala: tylko rig R15", 11, WHITE, Enum.Font.GothamMedium, UDim2.new(1, -28, 1, 0), UDim2.fromOffset(14, 0))
+	TrollScaleLabel.TextTransparency = 0.45
+end
+CreateSection(PageTroll, "Kamera")
+CreateToggle(PageTroll, "Pijany tryb (kołysanie kamery)", "Troll", "Drunk")
+CreateSlider(PageTroll, "Siła kołysania", "Troll", "DrunkStrength", 0.2, 3, 0.1, "x")
+CreateSection(PageTroll, "Dźwięk i efekty")
+CreateToggle(PageTroll, "Fart Cannon (losowe dźwięki co kilka s)", "Troll", "FartCannon")
+CreateButton(PageTroll, "🎉 Konfetti (jednorazowo)", UI.BlueDark, function()
+	if ConfettiBurst then
+		ConfettiBurst()
+	end
+end)
+CreateSection(PageTroll, "Informacje")
+CreateInfo(PageTroll, "Wszystko w zakładce Troll jest czysto kosmetyczne i widoczne TYLKO u Ciebie (lokalnie) – nic z tego nie wysyła się do innych graczy ani serwera. To tylko zabawa dla własnego ekranu.", 60)
 
 local RebuildFriendRows
 
@@ -1816,6 +1866,11 @@ CreateButton(PageSet, "Wyłącz wszystko (Panic)", UI.Red, function()
 	Settings.Movement.JumpEnabled = false
 	Settings.Movement.InfJump = false
 	Settings.Movement.Noclip = false
+	Settings.Troll.Dance = false
+	Settings.Troll.Scale = false
+	Settings.Troll.AnimSpeed = false
+	Settings.Troll.Drunk = false
+	Settings.Troll.FartCannon = false
 	for _, r in ipairs(Refreshers) do
 		r()
 	end
@@ -2617,6 +2672,69 @@ local function ReleaseCenterLock()
 	end
 end
 
+-- ========================================================================
+-- KONTROLA KAMERY (naprawia "dziala w jednych grach, nie w innych")
+-- ========================================================================
+-- Domyslny skrypt kamery Roblox (PlayerModule/CameraModule) trzyma WLASNY
+-- wewnetrzny stan obrotu i co klatke nadpisuje nim cam.CFrame, niezaleznie
+-- od tego co zrobilismy w poprzedniej klatce. Jesli tylko ustawiamy
+-- cam.CFrame "obok" dzialania tego skryptu (tak jak robila to poprzednia
+-- wersja), to w grach ze standardowa kamera nasz obrot jest co klatke
+-- cofany/"odbijany" - stad "w jednej grze dziala, w drugiej nie".
+-- Rozwiazanie: na czas realnego celowania (Aimbot ruszajacy kamera, NIE
+-- Silent Aim) przelaczamy CameraType na Scriptable, co usypia domyslny
+-- skrypt kamery; po puszczeniu PPM / zamknieciu menu / smierci postaci
+-- oddajemy kamerze jej oryginalny CameraType, zeby zwykle sterowanie
+-- dalej dzialalo normalnie.
+local CamLock = {
+	Active = false,
+	Cam = nil,
+	PrevType = nil,
+}
+
+local function AcquireCamera(cam)
+	if CamLock.Active and CamLock.Cam == cam then
+		return
+	end
+	if CamLock.Active and CamLock.Cam and CamLock.Cam ~= cam then
+		-- kamera sie zmienila (np. nowa postac) - najpierw oddaj stara
+		pcall(function()
+			CamLock.Cam.CameraType = CamLock.PrevType
+		end)
+	end
+	CamLock.PrevType = cam.CameraType
+	if cam.CameraType ~= Enum.CameraType.Scriptable then
+		cam.CameraType = Enum.CameraType.Scriptable
+	end
+	CamLock.Cam = cam
+	CamLock.Active = true
+	if CamStatusLabel then
+		CamStatusLabel.Text = "Kamera: przejęta (celowanie)"
+	end
+end
+
+local function ReleaseCamera()
+	if not CamLock.Active then
+		return
+	end
+	CamLock.Active = false
+	local cam, prev = CamLock.Cam, CamLock.PrevType
+	CamLock.Cam, CamLock.PrevType = nil, nil
+	if cam then
+		pcall(function()
+			cam.CameraType = prev or Enum.CameraType.Custom
+		end)
+	end
+	if CamStatusLabel then
+		CamStatusLabel.Text = "Kamera: tryb gry"
+	end
+end
+
+-- jesli menu zostanie zamkniete / zresetowane podczas trzymania PPM, nie zostawiamy kamery uwiezionej
+LocalPlayer.CharacterAdded:Connect(function()
+	ReleaseCamera()
+end)
+
 local function ProcessAimbot(dt, cam, targets)
 	local cfg = Settings.Aimbot
 	local vp = cam.ViewportSize
@@ -2642,7 +2760,7 @@ local function ProcessAimbot(dt, cam, targets)
 
 	local ref = centerMode and Vector2.new(vp.X / 2, vp.Y / 2) or UserInputService:GetMouseLocation()
 
-	-- Silent Aim (niezalezny od Aimbota: dziala bez przytrzymywania PPM)
+	-- Silent Aim (niezalezny od Aimbota: dziala bez przytrzymywania PPM, nie rusza kamera)
 	UpdateSilent(cam, targets, ref)
 
 	local showFov = cfg.ShowFOV and (cfg.Enabled or cfg.SilentAim)
@@ -2660,10 +2778,15 @@ local function ProcessAimbot(dt, cam, targets)
 		end
 		if AimPart then
 			locked = true
+			AcquireCamera(cam)
 			AimAt(cam, AimPart, dt)
+		else
+			-- Aimbot wlaczony, PPM trzymane, ale brak celu w FOV - oddaj kamere zeby mozna bylo sie normalnie rozgladac
+			ReleaseCamera()
 		end
 	else
 		AimEntry, AimPart = nil, nil
+		ReleaseCamera()
 	end
 	if showFov then
 		if cfg.RainbowFOV then
@@ -2908,6 +3031,205 @@ UserInputService.InputBegan:Connect(function(input, gp)
 		end
 	end
 end)
+
+-- ========================================================================
+-- TROLL (kosmetyczne, wylacznie lokalne efekty)
+-- ========================================================================
+do
+	local DANCE_IDS = {
+		Dance1 = "rbxassetid://182435998",
+		Dance2 = "rbxassetid://182436842",
+		Dance3 = "rbxassetid://182436935",
+		Laugh = "rbxassetid://148840371",
+	}
+	local FART_IDS = { "rbxassetid://142232227", "rbxassetid://5801257793", "rbxassetid://150827850" }
+	local CONFETTI_COLORS = {
+		Color3.fromRGB(147, 51, 234), Color3.fromRGB(34, 211, 238), Color3.fromRGB(74, 222, 128),
+		Color3.fromRGB(251, 146, 60), Color3.fromRGB(248, 113, 113), Color3.fromRGB(250, 204, 21),
+	}
+
+	local DanceTrack, DanceAnimId = nil, nil
+	local DrunkOrig = nil -- oryginalny CFrame.offset kamery / zapamietany roll
+	local FartNextAt = 0
+	local AnimSpeedApplied = {} -- [track] = true, zeby wiedziec co odkrecic
+
+	local function GetAnimator(char)
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		return hum and hum:FindFirstChildOfClass("Animator")
+	end
+
+	local function StopDance()
+		if DanceTrack then
+			pcall(function()
+				DanceTrack:Stop(0.2)
+			end)
+			DanceTrack = nil
+			DanceAnimId = nil
+		end
+	end
+
+	local function UpdateDance()
+		local char = LocalPlayer.Character
+		local animator = GetAnimator(char)
+		local wantId = DANCE_IDS[Settings.Troll.DanceId] or DANCE_IDS.Dance2
+
+		if not Settings.Troll.Dance or not animator then
+			StopDance()
+			return
+		end
+		if DanceTrack and DanceAnimId == wantId and DanceTrack.IsPlaying then
+			return
+		end
+		StopDance()
+		local ok, anim = pcall(function()
+			local a = Instance.new("Animation")
+			a.AnimationId = wantId
+			return animator:LoadAnimation(a)
+		end)
+		if ok and anim then
+			anim.Looped = true
+			anim.Priority = Enum.AnimationPriority.Action
+			anim:Play(0.2)
+			DanceTrack, DanceAnimId = anim, wantId
+		end
+	end
+
+	local function UpdateAnimSpeed()
+		local char = LocalPlayer.Character
+		local animator = GetAnimator(char)
+		if not animator then
+			return
+		end
+		if Settings.Troll.AnimSpeed then
+			for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+				if track.Speed ~= Settings.Troll.AnimSpeedAmount then
+					track:AdjustSpeed(Settings.Troll.AnimSpeedAmount)
+				end
+				AnimSpeedApplied[track] = true
+			end
+		elseif next(AnimSpeedApplied) ~= nil then
+			for track in pairs(AnimSpeedApplied) do
+				if track.Parent then
+					pcall(function()
+						track:AdjustSpeed(1)
+					end)
+				end
+				AnimSpeedApplied[track] = nil
+			end
+		end
+	end
+
+	-- R15: Humanoid ma wbudowane NumberValue-skale, dzialaja natywnie (bez brzydkiego skalowania czesci recznie)
+	local function UpdateScale()
+		local char = LocalPlayer.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if not hum then
+			return
+		end
+		local isR15 = hum.RigType == Enum.HumanoidRigType.R15
+		if TrollScaleLabel then
+			TrollScaleLabel.Text = isR15 and "Skala: rig R15 wykryty" or "Skala: ten rig to R6 – niewspierane"
+		end
+		if not isR15 then
+			return
+		end
+		local want = Settings.Troll.Scale and Settings.Troll.ScaleAmount or 1
+		for _, prop in ipairs({ "HeadScale", "BodyDepthScale", "BodyHeightScale", "BodyWidthScale" }) do
+			local ok = pcall(function()
+				if hum[prop] ~= want then
+					hum[prop] = want
+				end
+			end)
+		end
+	end
+
+	-- Offset z poprzedniej klatki jest co klatke NAJPIERW cofany (:Inverse()), a dopiero potem
+	-- nakladany nowy - inaczej mnozenie cam.CFrame * offset co klatke sumowaloby sie w nieskonczonosc
+	-- i kamera odleciałaby zamiast lagodnie sie kolysac.
+	local DrunkLastOffset = CFrame.new()
+
+	local function UpdateDrunk(dt)
+		local cam = GetCamera()
+		if not cam then
+			return
+		end
+		-- nie wchodzi w konflikt z aimbotem: jesli aimbot wlasnie przejal kamere, pomijamy i cofamy offset
+		if Settings.Troll.Drunk and not CamLock.Active then
+			local t = os.clock() * 1.3
+			local roll = math.sin(t) * 6 * Settings.Troll.DrunkStrength
+			local bobX = math.sin(t * 0.7) * 0.15 * Settings.Troll.DrunkStrength
+			local bobY = math.cos(t * 0.9) * 0.1 * Settings.Troll.DrunkStrength
+			local newOffset = CFrame.new(bobX, bobY, 0) * CFrame.Angles(0, 0, math.rad(roll))
+			cam.CFrame = cam.CFrame * DrunkLastOffset:Inverse() * newOffset
+			DrunkLastOffset = newOffset
+		elseif DrunkLastOffset ~= CFrame.new() then
+			cam.CFrame = cam.CFrame * DrunkLastOffset:Inverse()
+			DrunkLastOffset = CFrame.new()
+		end
+	end
+
+	local function UpdateFart(now)
+		if not Settings.Troll.FartCannon then
+			FartNextAt = 0
+			return
+		end
+		if now < FartNextAt then
+			return
+		end
+		FartNextAt = now + math.random(4, 10)
+		local char = LocalPlayer.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart")
+		if not root then
+			return
+		end
+		local snd = Instance.new("Sound")
+		snd.SoundId = FART_IDS[math.random(1, #FART_IDS)]
+		snd.Volume = 1
+		snd.Parent = root
+		snd:Play()
+		game:GetService("Debris"):AddItem(snd, 6)
+	end
+
+	ConfettiBurst = function()
+		local char = LocalPlayer.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart")
+		if not root then
+			return
+		end
+		local attach = Instance.new("Attachment")
+		attach.Parent = root
+		local emitter = Instance.new("ParticleEmitter")
+		emitter.Parent = attach
+		emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+		emitter.Lifetime = NumberRange.new(0.8, 1.6)
+		emitter.Speed = NumberRange.new(8, 18)
+		emitter.SpreadAngle = Vector2.new(180, 180)
+		emitter.Rate = 0
+		emitter.Rotation = NumberRange.new(0, 360)
+		emitter.RotSpeed = NumberRange.new(-180, 180)
+		emitter.Size = NumberSequence.new(0.35)
+		emitter.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		emitter.Color = ColorSequence.new(CONFETTI_COLORS[math.random(1, #CONFETTI_COLORS)])
+		emitter:Emit(60)
+		game:GetService("Debris"):AddItem(attach, 2.2)
+	end
+
+	LocalPlayer.CharacterAdded:Connect(function()
+		DanceTrack, DanceAnimId = nil, nil
+		table.clear(AnimSpeedApplied)
+	end)
+
+	ProcessTroll = function(dt)
+		UpdateDance()
+		UpdateAnimSpeed()
+		UpdateScale()
+		UpdateDrunk(dt)
+		UpdateFart(os.clock())
+	end
+end
 
 local CollectAlienParts, SetAlienTint
 local ProcessVisual
@@ -3964,6 +4286,7 @@ RunService:BindToRenderStep("PolishMafia_Aim", Enum.RenderPriority.Camera.Value 
 	Safe("Heads", ProcessHeads, targets)
 	Safe("Aimbot", ProcessAimbot, dt, cam, targets)
 	Safe("Visual", ProcessVisual, dt)
+	Safe("Troll", ProcessTroll, dt)
 end)
 
 RunService.Heartbeat:Connect(function(dt)
