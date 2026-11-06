@@ -1991,6 +1991,23 @@ task.spawn(function()
 	box:Destroy()
 end)
 
+local function AimAllowed(e)
+	local cfg = Settings.Aimbot
+	if cfg.PlayersOnly and not e.Player then
+		return false
+	end
+	if cfg.IgnoreDummy and e.IsDummy then
+		return false
+	end
+	if IsFriend(e) then
+		return false
+	end
+	if cfg.TeamCheck and e.Player and LocalPlayer.Team ~= nil and e.Player.Team == LocalPlayer.Team then
+		return false
+	end
+	return true
+end
+
 local ProcessHeads
 do
 	local HEAD_COLOR = Color3.fromRGB(147, 51, 234)
