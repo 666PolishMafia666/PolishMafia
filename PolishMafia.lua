@@ -40,6 +40,7 @@ local Settings = {
 		WallCheck = true,
 		MultiRay = true,
 		ShowFOV = false,
+		RainbowFOV = false,
 		IgnoreDummy = true,
 		PlayersOnly = false,
 		TeamCheck = false,
@@ -816,10 +817,14 @@ local function Card(parent, height, clickable, base)
 	return card
 end
 
-local function CreateSection(page, text)
-	local f = New("Frame", {
-		Size = UDim2.new(1, 0, 0, 24),
+local SectionTarget = {} -- [page] = aktualny kontener, do ktorego trafiaja kolejne Create*
+
+local function CreateSection(page, text, startCollapsed)
+	local header = New("TextButton", {
+		Size = UDim2.new(1, 0, 0, 26),
 		BackgroundTransparency = 1,
+		Text = "",
+		AutoButtonColor = false,
 		LayoutOrder = NextOrder(page),
 		Parent = page,
 	})
@@ -828,14 +833,54 @@ local function CreateSection(page, text)
 		Position = UDim2.new(0, 2, 0.5, -3),
 		BackgroundColor3 = UI.Blue,
 		BorderSizePixel = 0,
-		Parent = f,
+		Parent = header,
 	})
 	Corner(sq, 1)
-	local l = Label(f, string.upper(text), 11, WHITE, Enum.Font.GothamBold, UDim2.new(1, -20, 1, 0), UDim2.fromOffset(16, 0))
+	local l = Label(header, string.upper(text), 11, WHITE, Enum.Font.GothamBold, UDim2.new(1, -40, 1, 0), UDim2.fromOffset(16, 0))
 	l.TextTransparency = 0.35
+
+	local chevron = Label(header, ">", 13, WHITE, Enum.Font.GothamBold, UDim2.fromOffset(18, 18), UDim2.new(1, -24, 0.5, -9), Enum.TextXAlignment.Center)
+	chevron.TextYAlignment = Enum.TextYAlignment.Center
+	chevron.TextTransparency = 0.35
+
+	local body = New("Frame", {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		LayoutOrder = NextOrder(page),
+		Parent = page,
+	})
+	local bl = Instance.new("UIListLayout")
+	bl.Padding = UDim.new(0, 8)
+	bl.SortOrder = Enum.SortOrder.LayoutOrder
+	bl.Parent = body
+	Orders[body] = 0
+
+	SectionTarget[page] = body
+
+	local collapsed = startCollapsed and true or false
+	body.Visible = not collapsed
+	chevron.Rotation = collapsed and 0 or 90
+
+	header.MouseButton1Click:Connect(function()
+		collapsed = not collapsed
+		body.Visible = not collapsed
+		Tween(chevron, 0.18, { Rotation = collapsed and 0 or 90 }, Enum.EasingStyle.Back)
+	end)
+	header.MouseEnter:Connect(function()
+		Tween(l, 0.12, { TextTransparency = 0.05 })
+		Tween(chevron, 0.12, { TextTransparency = 0.05 })
+	end)
+	header.MouseLeave:Connect(function()
+		Tween(l, 0.12, { TextTransparency = 0.35 })
+		Tween(chevron, 0.12, { TextTransparency = 0.35 })
+	end)
+
+	return body
 end
 
 local function CreateToggle(page, text, category, key, onChange)
+	page = SectionTarget[page] or page
 	local card = Card(page, 40, true)
 	Label(card, text, 13, WHITE, Enum.Font.GothamMedium, UDim2.new(1, -80, 1, 0), UDim2.fromOffset(14, 0))
 
@@ -878,6 +923,7 @@ local function CreateToggle(page, text, category, key, onChange)
 end
 
 local function CreateSlider(page, text, category, key, minV, maxV, step, suffix)
+	page = SectionTarget[page] or page
 	suffix = suffix or ""
 	local card = Card(page, 54, false)
 	Label(card, text, 13, WHITE, Enum.Font.GothamMedium, UDim2.new(1, -110, 0, 22), UDim2.fromOffset(14, 8))
@@ -956,6 +1002,7 @@ local function CreateSlider(page, text, category, key, minV, maxV, step, suffix)
 end
 
 local function CreateChoice(page, text, category, key, options)
+	page = SectionTarget[page] or page
 	local card = Card(page, 40, true)
 	Label(card, text, 13, WHITE, Enum.Font.GothamMedium, UDim2.new(1, -150, 1, 0), UDim2.fromOffset(14, 0))
 	local chip = New("TextLabel", {
@@ -1002,6 +1049,7 @@ end
 local Binding, BindJustSet = nil, 0
 
 local function CreateBind(page, text, category, key)
+	page = SectionTarget[page] or page
 	local card = Card(page, 40, true)
 	Label(card, text, 13, WHITE, Enum.Font.GothamMedium, UDim2.new(1, -150, 1, 0), UDim2.fromOffset(14, 0))
 	local chip = New("TextLabel", {
@@ -1052,6 +1100,7 @@ local function CreateBind(page, text, category, key)
 end
 
 local function CreateColorRow(page, text)
+	page = SectionTarget[page] or page
 	local card = Card(page, 108, false)
 	Label(card, text, 13, WHITE, Enum.Font.GothamMedium, UDim2.new(1, -28, 0, 22), UDim2.fromOffset(14, 8))
 	local row = New("Frame", {
@@ -1103,6 +1152,7 @@ local function CreateColorRow(page, text)
 end
 
 local function CreateInfo(page, text, height)
+	page = SectionTarget[page] or page
 	local card = Card(page, height, false)
 	local l = Label(card, text, 12, WHITE, Enum.Font.GothamMedium, UDim2.new(1, -28, 1, -16), UDim2.fromOffset(14, 8))
 	l.TextTransparency = 0.35
@@ -1111,6 +1161,7 @@ local function CreateInfo(page, text, height)
 end
 
 local function CreateButton(page, text, color, callback)
+	page = SectionTarget[page] or page
 	local card = Card(page, 40, true, color)
 	local lbl = Label(card, text, 13, WHITE, Enum.Font.GothamBold, UDim2.fromScale(1, 1), UDim2.new(), Enum.TextXAlignment.Center)
 	card.MouseButton1Click:Connect(function()
@@ -1244,7 +1295,7 @@ local AimStatusLabel, AimStatusDot
 
 CreateSection(PageAim, "Status")
 do
-	local card = Card(PageAim, 40, false)
+	local card = Card(SectionTarget[PageAim], 40, false)
 	AimStatusDot = New("Frame", {
 		Size = UDim2.fromOffset(8, 8),
 		Position = UDim2.new(0, 14, 0.5, -4),
@@ -1261,6 +1312,7 @@ CreateSection(PageAim, "Główne")
 CreateToggle(PageAim, "Włącz Aimbot (przytrzymaj PPM)", "Aimbot", "Enabled")
 CreateChoice(PageAim, "Tryb celowania", "Aimbot", "AimMode", { { "Snap", "Natychmiast" }, { "Smooth", "Płynny" } })
 CreateToggle(PageAim, "Pokaż okrąg FOV", "Aimbot", "ShowFOV")
+CreateToggle(PageAim, "Rainbow FOV", "Aimbot", "RainbowFOV")
 CreateToggle(PageAim, "WallCheck (widoczność)", "Aimbot", "WallCheck")
 CreateToggle(PageAim, "MultiRay (odporny WallCheck)", "Aimbot", "MultiRay")
 CreateToggle(PageAim, "Tylko gracze (bez NPC)", "Aimbot", "PlayersOnly")
@@ -1285,7 +1337,7 @@ CreateSection(PageAim, "Silent Aim")
 CreateToggle(PageAim, "Silent Aim (bez ruszania kamerą)", "Aimbot", "SilentAim")
 CreateSlider(PageAim, "Szansa trafienia", "Aimbot", "SilentChance", 1, 100, 1, " %")
 do
-	local card = Card(PageAim, 30, false)
+	local card = Card(SectionTarget[PageAim], 30, false)
 	SilentStatusLabel = Label(card, "Silent Aim: wyłączony", 11, WHITE, Enum.Font.GothamMedium, UDim2.new(1, -28, 1, 0), UDim2.fromOffset(14, 0))
 	SilentStatusLabel.TextTransparency = 0.3
 end
@@ -1332,7 +1384,7 @@ table.insert(Refreshers, UpdateVisualVis)
 CreateSection(PageVisual, "Outfit")
 CreateToggle(PageVisual, "Alien Fit (zdejmuje akcesoria)", "Visual", "AlienFit")
 do
-	local card = Card(PageVisual, 30, false)
+	local card = Card(SectionTarget[PageVisual], 30, false)
 	AlienStatusLabel = Label(card, "Alien Fit: wyłączony", 11, WHITE, Enum.Font.GothamMedium, UDim2.new(1, -28, 1, 0), UDim2.fromOffset(14, 0))
 	AlienStatusLabel.TextTransparency = 0.3
 end
@@ -1430,12 +1482,13 @@ do
 end
 
 CreateSection(PageFriends, "Lista znajomych")
+local FriendsBody = SectionTarget[PageFriends]
 local FriendHolder = New("Frame", {
 	Size = UDim2.new(1, 0, 0, 0),
 	AutomaticSize = Enum.AutomaticSize.Y,
 	BackgroundTransparency = 1,
-	LayoutOrder = NextOrder(PageFriends),
-	Parent = PageFriends,
+	LayoutOrder = NextOrder(FriendsBody),
+	Parent = FriendsBody,
 })
 do
 	local l = Instance.new("UIListLayout")
@@ -1609,7 +1662,7 @@ do
 
 	CreateSection(PageConfig, "Konfiguracje")
 	for _, c in ipairs(Configs) do
-		local card = Card(PageConfig, 54, true)
+		local card = Card(SectionTarget[PageConfig], 54, true)
 		local sq = New("Frame", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.new(0, 18, 0.5, 0),
@@ -1648,7 +1701,7 @@ end
 CreateSection(PageSet, "Wygląd")
 CreateColorRow(PageSet, "Kolor ESP")
 do
-	local card = Card(PageSet, 150, false)
+	local card = Card(SectionTarget[PageSet], 150, false)
 	Label(card, "Własny kolor RGB", 13, WHITE, Enum.Font.GothamMedium, UDim2.new(1, -90, 0, 22), UDim2.fromOffset(14, 8))
 	local preview = New("Frame", {
 		Size = UDim2.fromOffset(40, 20),
@@ -2044,17 +2097,17 @@ AimRayParams.FilterType = Enum.RaycastFilterType.Exclude
 AimRayParams.IgnoreWater = true
 AimRayParams.RespectCanCollide = true
 
-local MAX_PITCH = math.rad(80)
-local DEADZONE_PX = 0.75
+local MAX_PITCH = math.rad(89)
+local TAU = math.pi * 2
 
-local function GetFocal(cam)
-	local cf = cam.CFrame
-	local v = cam:WorldToViewportPoint(cf.Position + cf.LookVector * 10 + cf.RightVector * 10)
-	local f = v.X - cam.ViewportSize.X / 2
-	if f > 1 then
-		return f
+-- roznica katow zawinieta do przedzialu (-pi, pi], zeby obrot zawsze szedl najkrotsza droga
+-- (bez tego przejscie przez +-180 stopni potrafilo zakrecic kamera w zla strone)
+local function ShortestAngle(target, current)
+	local d = (target - current) % TAU
+	if d > math.pi then
+		d = d - TAU
 	end
-	return (cam.ViewportSize.Y / 2) / math.tan(math.rad(cam.FieldOfView) / 2)
+	return d
 end
 
 -- punkty wokol czesci ciala uzywane przez MultiRay (gorny/dolny/lewy/prawy brzeg + srodek)
@@ -2217,63 +2270,52 @@ local function FindTarget(cam, targets, ref)
 	return bestE, bestPart
 end
 
--- Aimbot: tryb Snap = natychmiastowe przyklejenie kamery do celu (glowa),
--- tryb Smooth = plynny obrot z limitem predkosci.
-local function AimAt(cam, part, ref, dt)
+-- Aimbot: kamera jest zawsze obracana w strone celu wzgledem WLASNEJ pozycji (CFrame.lookAt),
+-- a nie przez rzutowanie na ekran wzgledem kursora - to eliminuje cala klase bledow starej wersji
+-- (zle dzialajacy deadzone, "ogniskowa" liczona przez rzut na viewport, skrecanie w zla strone
+-- przy przejsciu przez +-180 st.). Kursor (ref) jest uzywany TYLKO do wyboru celu w FindTarget,
+-- nie do samego obrotu kamery - dzieki temu dziala identycznie w kazdej grze, niezaleznie od
+-- tego czy ich celownik jest wyśrodkowany, bo liczy sie wprost kierunek patrzenia kamery.
+--   Snap   -> kamera natychmiast patrzy dokladnie w cel (jedna klatka).
+--   Smooth -> kamera dochodzi do kierunku na cel plynnie, z limitem predkosci obrotu (°/s).
+local function AimAt(cam, part, dt)
 	local cfg = Settings.Aimbot
-	local vp = cam.ViewportSize
-	local aimPos = AimPos(part, cam.CFrame.Position)
-	local sp = cam:WorldToViewportPoint(aimPos)
-	if sp.Z <= 0 then
+	local camPos = cam.CFrame.Position
+	local aimPos = AimPos(part, camPos)
+
+	local diff = aimPos - camPos
+	if diff.Magnitude < 0.05 then
 		return
 	end
 
-	local cx, cy = vp.X / 2, vp.Y / 2
-	local snap = cfg.AimMode ~= "Smooth"
+	local trx, try = CFrame.lookAt(camPos, aimPos):ToOrientation()
+	trx = math.clamp(trx, -MAX_PITCH, MAX_PITCH)
 
-	-- Snap + celownik na srodku ekranu: kamera patrzy dokladnie w glowe
-	if snap and math.abs(ref.X - cx) < 2 and math.abs(ref.Y - cy) < 2 then
-		local pos = cam.CFrame.Position
-		if (aimPos - pos).Magnitude > 0.01 then
-			local rx, ry = CFrame.lookAt(pos, aimPos):ToOrientation()
-			rx = math.clamp(rx, -MAX_PITCH, MAX_PITCH)
-			cam.CFrame = CFrame.new(pos) * CFrame.fromOrientation(rx, ry, 0)
-		end
+	if cfg.AimMode ~= "Smooth" then
+		-- Snap: pelne dopasowanie w jednej klatce
+		cam.CFrame = CFrame.new(camPos) * CFrame.fromOrientation(trx, try, 0)
 		return
-	end
-
-	local dxPx = sp.X - ref.X
-	local dyPx = sp.Y - ref.Y
-	if math.abs(dxPx) < DEADZONE_PX and math.abs(dyPx) < DEADZONE_PX then
-		return
-	end
-
-	local focal = GetFocal(cam)
-
-	local dYaw = math.atan((sp.X - cx) / focal) - math.atan((ref.X - cx) / focal)
-	local dPitch = math.atan((sp.Y - cy) / focal) - math.atan((ref.Y - cy) / focal)
-
-	local sYaw, sPitch
-	if snap then
-		-- pelna korekta w jednej klatce (kursor / celownik laduje na glowie)
-		sYaw, sPitch = dYaw, dPitch
-	else
-		local k = 120 / math.max(cfg.Smoothness, 1)
-		local alpha = math.clamp(1 - math.exp(-k * dt), 0.01, 1)
-		sYaw, sPitch = dYaw * alpha, dPitch * alpha
-		local maxStep = math.rad(cfg.MaxSpeed) * dt
-		local mag = math.sqrt(sYaw * sYaw + sPitch * sPitch)
-		if mag > maxStep and mag > 0 then
-			local k2 = maxStep / mag
-			sYaw, sPitch = sYaw * k2, sPitch * k2
-		end
 	end
 
 	local rx, ry = cam.CFrame:ToOrientation()
-	rx = math.clamp(rx - sPitch, -MAX_PITCH, MAX_PITCH)
-	ry = ry - sYaw
+	local dPitch = trx - rx
+	local dYaw = ShortestAngle(try, ry)
 
-	cam.CFrame = CFrame.new(cam.CFrame.Position) * CFrame.fromOrientation(rx, ry, 0)
+	local k = 120 / math.max(cfg.Smoothness, 1)
+	local alpha = math.clamp(1 - math.exp(-k * dt), 0.01, 1)
+	local sPitch, sYaw = dPitch * alpha, dYaw * alpha
+
+	local maxStep = math.rad(cfg.MaxSpeed) * dt
+	local mag = math.sqrt(sPitch * sPitch + sYaw * sYaw)
+	if mag > maxStep and mag > 0 then
+		local k2 = maxStep / mag
+		sPitch, sYaw = sPitch * k2, sYaw * k2
+	end
+
+	rx = math.clamp(rx + sPitch, -MAX_PITCH, MAX_PITCH)
+	ry = ry + sYaw
+
+	cam.CFrame = CFrame.new(camPos) * CFrame.fromOrientation(rx, ry, 0)
 end
 
 -- SILENT AIM: kamera sie nie rusza. Gra dostaje podmienione Mouse.Hit / Mouse.Target /
@@ -2618,13 +2660,17 @@ local function ProcessAimbot(dt, cam, targets)
 		end
 		if AimPart then
 			locked = true
-			AimAt(cam, AimPart, ref, dt)
+			AimAt(cam, AimPart, dt)
 		end
 	else
 		AimEntry, AimPart = nil, nil
 	end
 	if showFov then
-		FOVStroke.Color = locked and WHITE or Theme.Accent
+		if cfg.RainbowFOV then
+			FOVStroke.Color = Color3.fromHSV((os.clock() * 0.3) % 1, 1, 1)
+		else
+			FOVStroke.Color = locked and WHITE or Theme.Accent
+		end
 	end
 
 	if not cfg.Enabled then
